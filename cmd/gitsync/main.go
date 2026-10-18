@@ -13,7 +13,10 @@ import (
 	"time"
 
 	"gitsync/internal/config"
+	"gitsync/internal/history"
+	"gitsync/internal/logstore"
 	"gitsync/internal/respond"
+	"gitsync/internal/store/bolt"
 	"gitsync/internal/webui"
 )
 
@@ -59,6 +62,20 @@ func run() error {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	logger.Info("loaded configuration", "config", cfg.Redacted())
+
+	logs, err := logstore.New(cfg.Storage.LogsDir)
+	if err != nil {
+		return err
+	}
+	db, err := bolt.Open(cfg.Storage.DataDir + "/gitsync.db")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	cleaner := history.New(db.Activities(), db.Repositories(), logs, cfg.History.MaxItems)
+	if err := cleaner.Startup(context.Background()); err != nil {
+		return fmt.Errorf("startup history cleanup: %w", err)
+	}
 
 	server := &http.Server{
 		Addr:              cfg.Server.Listen,
