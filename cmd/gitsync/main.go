@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gitsync/internal/config"
+	"gitsync/internal/gitx"
 	"gitsync/internal/history"
 	"gitsync/internal/logstore"
 	"gitsync/internal/respond"
@@ -62,6 +63,9 @@ func run() error {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	logger.Info("loaded configuration", "config", cfg.Redacted())
+	if _, err := gitx.MakeHome(cfg.Storage.DataDir); err != nil {
+		return err
+	}
 
 	logs, err := logstore.New(cfg.Storage.LogsDir)
 	if err != nil {
