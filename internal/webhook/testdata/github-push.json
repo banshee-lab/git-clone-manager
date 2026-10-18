@@ -1,0 +1,22 @@
+{
+  "ref": "refs/heads/main",
+  "before": "6113728f27ae82c7b1a177c8d03f9e96e0adf246",
+  "after": "a10867b14bb761a232cd80139fbd4c0d33264240",
+  "repository": {
+    "id": 1296269,
+    "name": "demo",
+    "full_name": "octocat/demo",
+    "default_branch": "main"
+  },
+  "pusher": {
+    "name": "octocat",
+    "email": "octocat@example.invalid"
+  },
+  "sender": {
+    "login": "octocat"
+  },
+  "created": false,
+  "deleted": false,
+  "forced": false,
+  "commits": []
+}

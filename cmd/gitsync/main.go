@@ -23,6 +23,7 @@ import (
 	"gitsync/internal/store"
 	"gitsync/internal/store/bolt"
 	"gitsync/internal/syncer"
+	"gitsync/internal/webhook"
 	"gitsync/internal/webui"
 )
 
@@ -152,6 +153,7 @@ func newMux(cfg config.Config, authService *auth.Service, repos store.Repositori
 }) (http.Handler, error) {
 	mux := http.NewServeMux()
 	apiService := api.New(cfg, repos, activities, manager, hub, logs, cleaner)
+	webhookHandler := webhook.NewHandler(cfg.Webhooks.Secret, repos, manager, slog.Default())
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /auth/login", authService.Login)
 	mux.HandleFunc("GET /auth/callback", authService.Callback)
@@ -171,6 +173,7 @@ func newMux(cfg config.Config, authService *auth.Service, repos store.Repositori
 	mux.Handle("GET /api/activities/{id}/log", authService.RequireSession(http.HandlerFunc(apiService.ActivityLog)))
 	mux.Handle("GET /api/events", authService.RequireSession(http.HandlerFunc(apiService.Events)))
 	mux.Handle("GET /api/activities/{id}/stream", authService.RequireSession(http.HandlerFunc(apiService.ActivityStream)))
+	mux.Handle("POST /hooks/{repository_id}", webhookHandler)
 	mux.Handle("/", webui.Handler())
 	protection, err := auth.NewCSRFProtection(cfg.Server.BaseURL)
 	if err != nil {
