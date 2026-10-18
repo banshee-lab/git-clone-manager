@@ -5,11 +5,15 @@ v4 theme. Install with Yarn Classic from this directory:
 
 ```sh
 yarn install
-yarn check
+yarn run check
 yarn lint
 yarn test:ci
 yarn build
 ```
+
+Use `yarn run check` explicitly: Yarn Classic reserves `yarn check` for its
+dependency-integrity command, so that shorthand does not invoke the frontend
+type/Svelte check script.
 
 `yarn dev` proxies `/api`, `/auth`, `/hooks`, and `/healthz` to the Go server at
 `http://localhost:8080`. To preview the frontend shell without the server, copy
