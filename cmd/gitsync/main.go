@@ -19,6 +19,7 @@ import (
 	"gitsync/internal/gitx"
 	"gitsync/internal/history"
 	"gitsync/internal/logstore"
+	"gitsync/internal/notify"
 	"gitsync/internal/respond"
 	"gitsync/internal/store"
 	"gitsync/internal/store/bolt"
@@ -69,6 +70,10 @@ func run() error {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	logger.Info("loaded configuration", "config", cfg.Redacted())
+	logger.Info("notification channels configured",
+		"telegram_enabled", cfg.Notifications.Telegram.Enabled,
+		"webhook_enabled", cfg.Notifications.Webhook.Enabled,
+	)
 	authService, err := auth.New(context.Background(), cfg)
 	if err != nil {
 		return fmt.Errorf("initialize mandatory OIDC authentication: %w", err)
@@ -92,7 +97,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	manager, err := syncer.NewManager(db.Repositories(), db.Activities(), logs, executor, cleaner, nil, hub, cfg.Sync.MaxConcurrent)
+	notifier := notify.New(cfg, logs, logger, version)
+	manager, err := syncer.NewManager(db.Repositories(), db.Activities(), logs, executor, cleaner, notifier, hub, cfg.Sync.MaxConcurrent)
 	if err != nil {
 		return err
 	}
