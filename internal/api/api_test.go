@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gitsync/internal/config"
+	"gitsync/internal/logstore"
 	"gitsync/internal/model"
 	"gitsync/internal/store"
 )
@@ -28,19 +29,19 @@ func TestValidateRepositoryInputRules(t *testing.T) {
 		PostCommandTimeoutSeconds: 30,
 	}
 
-	if err := validateRepositoryInput(cfg, repos, ctx, base, true); err != nil {
+	if err := validateRepositoryInput(cfg, repos, ctx, base, true, ""); err != nil {
 		t.Fatalf("valid input rejected: %v", err)
 	}
 
 	badBranch := base
 	badBranch.Branch = "bad branch"
-	if err := validateRepositoryInput(cfg, repos, ctx, badBranch, true); err == nil || !strings.Contains(err.Error(), "branch") {
+	if err := validateRepositoryInput(cfg, repos, ctx, badBranch, true, ""); err == nil || !strings.Contains(err.Error(), "branch") {
 		t.Fatalf("expected branch validation error, got %v", err)
 	}
 
 	badPath := base
 	badPath.Path = cfg.Storage.DataDir
-	if err := validateRepositoryInput(cfg, repos, ctx, badPath, true); err == nil || !strings.Contains(err.Error(), "data_dir") {
+	if err := validateRepositoryInput(cfg, repos, ctx, badPath, true, ""); err == nil || !strings.Contains(err.Error(), "data_dir") {
 		t.Fatalf("expected data_dir validation error, got %v", err)
 	}
 
@@ -50,8 +51,76 @@ func TestValidateRepositoryInputRules(t *testing.T) {
 	if err := repos.Create(ctx, &seed); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	if err := validateRepositoryInput(cfg, repos, ctx, dupName, true); err == nil {
+	if err := validateRepositoryInput(cfg, repos, ctx, dupName, true, ""); err == nil {
 		t.Fatal("expected duplicate repository name conflict")
+	}
+}
+
+func TestApplyRepositoryUpdatePreservesOmittedValues(t *testing.T) {
+	existing := model.Repository{
+		ID:                        "11111111-1111-4111-8111-111111111111",
+		Name:                      "alpha",
+		URL:                       "https://example.com/alpha.git",
+		Branch:                    "main",
+		Path:                      "/tmp/repo",
+		AccessUsername:            "git",
+		AccessToken:               "old-token",
+		PostCommand:               "echo hello",
+		PostCommandTimeoutSeconds: 15,
+		HardReset:                 true,
+		WebhookSecret:             "old-secret",
+	}
+
+	input, present, err := decodeRepositoryInputBody(strings.NewReader(`{"branch":"release","path":"/tmp/repo-2"}`))
+	if err != nil {
+		t.Fatalf("decode update body: %v", err)
+	}
+	updated := applyRepositoryUpdate(existing, input, present)
+
+	if updated.Branch != "release" {
+		t.Fatalf("branch not updated: got %q", updated.Branch)
+	}
+	if updated.Path != "/tmp/repo-2" {
+		t.Fatalf("path not updated: got %q", updated.Path)
+	}
+	if updated.PostCommand != existing.PostCommand {
+		t.Fatalf("post command overwritten: got %q want %q", updated.PostCommand, existing.PostCommand)
+	}
+	if updated.PostCommandTimeoutSeconds != existing.PostCommandTimeoutSeconds {
+		t.Fatalf("timeout overwritten: got %d want %d", updated.PostCommandTimeoutSeconds, existing.PostCommandTimeoutSeconds)
+	}
+	if updated.HardReset != existing.HardReset {
+		t.Fatalf("hard_reset overwritten: got %t want %t", updated.HardReset, existing.HardReset)
+	}
+	if updated.AccessToken != existing.AccessToken {
+		t.Fatalf("access token overwritten: got %q want %q", updated.AccessToken, existing.AccessToken)
+	}
+}
+
+func TestFinishedActivityStreamSkipsSnapshotOnResume(t *testing.T) {
+	logs, err := logstore.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("new logstore: %v", err)
+	}
+	act := &model.Activity{ID: "44f3bd2a-ba64-4d2d-8e6f-111111111111", RepositoryID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Status: model.ActivitySuccess}
+	if err := logs.Append(act.RepositoryID, act.ID, "hello world"); err != nil {
+		t.Fatalf("append log: %v", err)
+	}
+
+	svc := &Service{logs: logs}
+	rec := httptest.NewRecorder()
+	w := respondingWriter{ResponseWriter: rec, Flusher: rec}
+	svc.writeActivityStream(w, act, 5, context.Background())
+	body := rec.Body.String()
+
+	if strings.Contains(body, "event: snapshot") {
+		t.Fatalf("resume offset should skip snapshot, body=%q", body)
+	}
+	if !strings.Contains(body, "event: log") {
+		t.Fatalf("expected resumed log event, body=%q", body)
+	}
+	if !strings.Contains(body, "\"offset\":11") {
+		t.Fatalf("expected final offset in resumed log payload, body=%q", body)
 	}
 }
 

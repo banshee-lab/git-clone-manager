@@ -245,12 +245,114 @@ func (s *Service) GetRepository(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, view)
 }
 
+func decodeRepositoryInputBody(r io.Reader) (RepositoryInput, map[string]bool, error) {
+	if r == nil {
+		return RepositoryInput{}, map[string]bool{}, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r).Decode(&raw); err != nil && !errors.Is(err, io.EOF) {
+		return RepositoryInput{}, nil, err
+	}
+	input := RepositoryInput{}
+	present := make(map[string]bool, len(raw))
+	for key, value := range raw {
+		present[key] = true
+		switch key {
+		case "name":
+			if err := json.Unmarshal(value, &input.Name); err != nil { return RepositoryInput{}, nil, err }
+		case "url":
+			if err := json.Unmarshal(value, &input.URL); err != nil { return RepositoryInput{}, nil, err }
+		case "branch":
+			if err := json.Unmarshal(value, &input.Branch); err != nil { return RepositoryInput{}, nil, err }
+		case "path":
+			if err := json.Unmarshal(value, &input.Path); err != nil { return RepositoryInput{}, nil, err }
+		case "access_username":
+			if err := json.Unmarshal(value, &input.AccessUsername); err != nil { return RepositoryInput{}, nil, err }
+		case "access_token":
+			var token *string
+			if err := json.Unmarshal(value, &token); err != nil { return RepositoryInput{}, nil, err }
+			input.AccessToken = token
+		case "clear_access_token":
+			if err := json.Unmarshal(value, &input.ClearAccessToken); err != nil { return RepositoryInput{}, nil, err }
+		case "post_command":
+			if err := json.Unmarshal(value, &input.PostCommand); err != nil { return RepositoryInput{}, nil, err }
+		case "post_command_timeout_seconds":
+			if err := json.Unmarshal(value, &input.PostCommandTimeoutSeconds); err != nil { return RepositoryInput{}, nil, err }
+		case "hard_reset":
+			if err := json.Unmarshal(value, &input.HardReset); err != nil { return RepositoryInput{}, nil, err }
+		case "webhook_secret":
+			var secret *string
+			if err := json.Unmarshal(value, &secret); err != nil { return RepositoryInput{}, nil, err }
+			input.WebhookSecret = secret
+		}
+	}
+	return input, present, nil
+}
+
+func repositoryInputFromModel(repo model.Repository) RepositoryInput {
+	return RepositoryInput{
+		Name:                      repo.Name,
+		URL:                       repo.URL,
+		Branch:                    repo.Branch,
+		Path:                      repo.Path,
+		AccessUsername:            repo.AccessUsername,
+		PostCommand:               repo.PostCommand,
+		PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds,
+		HardReset:                 repo.HardReset,
+	}
+}
+
+func applyRepositoryUpdate(existing model.Repository, input RepositoryInput, present map[string]bool) model.Repository {
+	updated := existing
+	if present["name"] {
+		updated.Name = strings.TrimSpace(input.Name)
+	}
+	if present["url"] {
+		updated.URL = input.URL
+	}
+	if present["branch"] {
+		updated.Branch = input.Branch
+	}
+	if present["path"] {
+		updated.Path = input.Path
+	}
+	if present["access_username"] {
+		updated.AccessUsername = input.AccessUsername
+	}
+	if present["access_token"] {
+		if input.AccessToken == nil || *input.AccessToken == "" {
+			updated.AccessToken = ""
+		} else {
+			updated.AccessToken = *input.AccessToken
+		}
+	}
+	if present["clear_access_token"] && input.ClearAccessToken {
+		updated.AccessToken = ""
+	}
+	if present["post_command"] || present["post_command_timeout_seconds"] || present["hard_reset"] {
+		updated.PostCommand = input.PostCommand
+		updated.PostCommandTimeoutSeconds = input.PostCommandTimeoutSeconds
+		updated.HardReset = input.HardReset
+	}
+	if present["webhook_secret"] {
+		if input.WebhookSecret == nil || *input.WebhookSecret == "" {
+			updated.WebhookSecret = ""
+		} else {
+			updated.WebhookSecret = *input.WebhookSecret
+		}
+	}
+	if updated.AccessUsername == "" {
+		updated.AccessUsername = "git"
+	}
+	return updated
+}
+
 func (s *Service) createRepositoryForm(r *http.Request) (model.Repository, *RepositoryInput, error) {
 	var input RepositoryInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
 		return model.Repository{}, nil, fmt.Errorf("decode repository payload: %w", err)
 	}
-	if err := validateRepositoryInput(s.cfg, s.repos, r.Context(), input, true); err != nil {
+	if err := validateRepositoryInput(s.cfg, s.repos, r.Context(), input, true, ""); err != nil {
 		return model.Repository{}, nil, err
 	}
 	repo := model.Repository{
@@ -332,12 +434,13 @@ func (s *Service) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "internal", "failed to load repository")
 		return
 	}
-	var input RepositoryInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+	input, present, err := decodeRepositoryInputBody(r.Body)
+	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "bad_request", "invalid repository payload")
 		return
 	}
-	if err := validateRepositoryInput(s.cfg, s.repos, ctx, input, false); err != nil {
+	updated := applyRepositoryUpdate(*existing, input, present)
+	if err := validateRepositoryInput(s.cfg, s.repos, ctx, repositoryInputFromModel(updated), false, existing.ID); err != nil {
 		var bad *apiError
 		if errors.As(err, &bad) {
 			respond.Error(w, http.StatusBadRequest, bad.Code, bad.Message)
@@ -345,50 +448,6 @@ func (s *Service) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 		}
 		respond.Error(w, http.StatusInternalServerError, "internal", err.Error())
 		return
-	}
-	updated := *existing
-	if strings.TrimSpace(input.Name) != "" {
-		updated.Name = strings.TrimSpace(input.Name)
-	}
-	if input.URL != "" {
-		updated.URL = input.URL
-	}
-	if input.Branch != "" || input.Branch == "" && existing.Branch != "" && r.Body != nil {
-		updated.Branch = input.Branch
-	}
-	if input.Path != "" {
-		updated.Path = input.Path
-	}
-	if input.AccessUsername != "" {
-		updated.AccessUsername = input.AccessUsername
-	}
-	if input.AccessToken != nil {
-		if *input.AccessToken != "" {
-			updated.AccessToken = *input.AccessToken
-		} else {
-			updated.AccessToken = ""
-		}
-	}
-	if input.ClearAccessToken {
-		updated.AccessToken = ""
-	}
-	if input.PostCommand != "" || input.PostCommandTimeoutSeconds != 0 || input.HardReset || r.Body != nil {
-		updated.PostCommand = input.PostCommand
-		updated.PostCommandTimeoutSeconds = input.PostCommandTimeoutSeconds
-		updated.HardReset = input.HardReset
-	}
-	if input.WebhookSecret != nil {
-		if *input.WebhookSecret == "" {
-			updated.WebhookSecret = ""
-		} else {
-			updated.WebhookSecret = *input.WebhookSecret
-		}
-	}
-	if updated.AccessUsername == "" {
-		updated.AccessUsername = "git"
-	}
-	if updated.Name == "" {
-		updated.Name = existing.Name
 	}
 	if err := s.repos.Update(ctx, &updated); err != nil {
 		if errors.Is(err, store.ErrConflict) {
@@ -654,14 +713,32 @@ func (s *Service) ActivityStream(w http.ResponseWriter, r *http.Request) {
 	ctrl := http.NewResponseController(w)
 	_ = ctrl.SetWriteDeadline(time.Time{})
 	flusher, _ := w.(http.Flusher)
-	ctx := r.Context()
+	s.writeActivityStream(respondingWriter{ResponseWriter: w, Flusher: flusher}, act, offset, r.Context())
+}
+
+type respondingWriter struct {
+	http.ResponseWriter
+	http.Flusher
+}
+
+func (s *Service) writeActivityStream(w respondingWriter, act *model.Activity, offset int64, ctx context.Context) {
 	if act.Status.IsFinished() {
 		content, err := s.readActivityLog(act)
 		if err != nil {
 			content = "[log read failed]\n"
 		}
-		_ = writeSSEEventID(w, flusher, "snapshot", strconv.FormatInt(int64(len(content)), 10), map[string]any{"status": act.Status, "log": trimUTF8Boundaries(content), "offset": int64(len(content))})
-		_ = writeSSEEventID(w, flusher, "end", strconv.FormatInt(int64(len(content)), 10), map[string]string{"status": string(act.Status)})
+		if offset > 0 {
+			if offset >= int64(len(content)) {
+				_ = writeSSEEventID(w, w.Flusher, "end", strconv.FormatInt(offset, 10), map[string]string{"status": string(act.Status)})
+				return
+			}
+			chunk := content[offset:]; finalOffset := int64(len(content))
+			_ = writeSSEEventID(w, w.Flusher, "log", strconv.FormatInt(finalOffset, 10), map[string]any{"chunk": trimUTF8Boundaries(chunk), "offset": finalOffset})
+			_ = writeSSEEventID(w, w.Flusher, "end", strconv.FormatInt(int64(len(content)), 10), map[string]string{"status": string(act.Status)})
+			return
+		}
+		_ = writeSSEEventID(w, w.Flusher, "snapshot", strconv.FormatInt(int64(len(content)), 10), map[string]any{"status": act.Status, "log": trimUTF8Boundaries(content), "offset": int64(len(content))})
+		_ = writeSSEEventID(w, w.Flusher, "end", strconv.FormatInt(int64(len(content)), 10), map[string]string{"status": string(act.Status)})
 		return
 	}
 	if offset == 0 {
@@ -669,21 +746,18 @@ func (s *Service) ActivityStream(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			data = "[log read failed]\n"
 		}
-		_ = writeSSEEventID(w, flusher, "snapshot", "0", map[string]any{"status": act.Status, "log": trimUTF8Boundaries(data), "offset": int64(len(data))})
+		_ = writeSSEEventID(w, w.Flusher, "snapshot", "0", map[string]any{"status": act.Status, "log": trimUTF8Boundaries(data), "offset": int64(len(data))})
 	}
 	live := s.manager.LiveLog(act.ID)
 	if live == nil {
-		_ = writeSSEEventID(w, flusher, "end", strconv.FormatInt(offset, 10), map[string]string{"status": string(act.Status)})
+		_ = writeSSEEventID(w, w.Flusher, "end", strconv.FormatInt(offset, 10), map[string]string{"status": string(act.Status)})
 		return
 	}
 	for chunk := range live.Subscribe(ctx, offset) {
-		_ = writeSSEEventID(w, flusher, "log", strconv.FormatInt(chunk.Offset, 10), map[string]any{"chunk": chunk.Data, "offset": chunk.Offset})
-		if ctx.Err() != nil {
-			return
-		}
+		_ = writeSSEEventID(w, w.Flusher, "log", strconv.FormatInt(chunk.Offset, 10), map[string]any{"chunk": chunk.Data, "offset": chunk.Offset})
 	}
-	if act, err := s.activities.Get(r.Context(), id); err == nil && act.Status.IsFinished() {
-		_ = writeSSEEventID(w, flusher, "end", strconv.FormatInt(offset, 10), map[string]string{"status": string(act.Status)})
+	if act, err := s.activities.Get(ctx, act.ID); err == nil && act.Status.IsFinished() {
+		_ = writeSSEEventID(w, w.Flusher, "end", strconv.FormatInt(offset, 10), map[string]string{"status": string(act.Status)})
 	}
 }
 
@@ -714,7 +788,7 @@ func (e *apiError) Error() string { return e.Message }
 
 func badRequest(msg string) error { return &apiError{Code: "bad_request", Message: msg} }
 
-func validateRepositoryInput(cfg config.Config, repos store.Repositories, ctx context.Context, input RepositoryInput, create bool) error {
+func validateRepositoryInput(cfg config.Config, repos store.Repositories, ctx context.Context, input RepositoryInput, create bool, currentID string) error {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return badRequest("name is required")
@@ -752,11 +826,15 @@ func validateRepositoryInput(cfg config.Config, repos store.Repositories, ctx co
 			if _, err := repos.GetByName(ctx, name); err == nil {
 				return &apiError{Code: "conflict", Message: "repository name is already in use"}
 			}
+		} else if currentID != "" {
+			if existing, err := repos.GetByName(ctx, name); err == nil && existing.ID != currentID {
+				return &apiError{Code: "conflict", Message: "repository name is already in use"}
+			}
 		}
 		all, err := repos.List(ctx)
 		if err == nil {
 			for _, repo := range all {
-				if repo.ID == "" {
+				if repo.ID == "" || (currentID != "" && repo.ID == currentID) {
 					continue
 				}
 				if isPathOverlap(clean, repo.Path) {
