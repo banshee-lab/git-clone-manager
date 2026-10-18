@@ -27,6 +27,7 @@ type Spec struct {
 	Out      io.Writer
 	Timeout  time.Duration
 	Token    string
+	Redact   []string
 }
 
 var ErrTimedOut = errors.New("command timed out")
@@ -61,10 +62,10 @@ func Run(ctx context.Context, spec Spec) error {
 	if spec.Timeout <= 0 {
 		return errors.New("gitx: timeout must be greater than zero")
 	}
-	if _, err := fmt.Fprintf(spec.Out, "$ %s\n", display(name, args, spec.Token)); err != nil {
+	if _, err := fmt.Fprintf(spec.Out, "$ %s\n", display(name, args, spec.Token, spec.Redact...)); err != nil {
 		return fmt.Errorf("gitx: write command header: %w", err)
 	}
-	redactor := NewRedactor(spec.Out, spec.Token)
+	redactor := NewRedactor(spec.Out, spec.Token, spec.Redact...)
 	cmd := exec.Command(name, args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = spec.Env
@@ -117,12 +118,15 @@ func terminate(pid int, wait <-chan error) error {
 	return waitErr
 }
 
-func display(name string, args []string, token string) string {
+func display(name string, args []string, token string, extra ...string) string {
 	parts := append([]string{name}, args...)
 	for i, part := range parts {
-		if token != "" {
-			part = strings.ReplaceAll(part, token, "***")
-			part = strings.ReplaceAll(part, base64.StdEncoding.EncodeToString([]byte(token)), "***")
+		secrets := append([]string{token}, extra...)
+		for _, secret := range secrets {
+			if secret != "" {
+				part = strings.ReplaceAll(part, secret, "***")
+				part = strings.ReplaceAll(part, base64.StdEncoding.EncodeToString([]byte(secret)), "***")
+			}
 		}
 		if strings.ContainsAny(part, " \t\n\"'") {
 			part = "\"" + strings.ReplaceAll(strings.ReplaceAll(part, "\\", "\\\\"), "\"", "\\\"") + "\""
@@ -141,13 +145,16 @@ type Redactor struct {
 	closed   bool
 }
 
-func NewRedactor(out io.Writer, token string) *Redactor {
+func NewRedactor(out io.Writer, token string, additional ...string) *Redactor {
 	r := &Redactor{out: out}
-	if token != "" {
-		r.patterns = append(r.patterns, []byte(token))
-		encoded := base64.StdEncoding.EncodeToString([]byte(token))
-		if encoded != token {
-			r.patterns = append(r.patterns, []byte(encoded))
+	secrets := append([]string{token}, additional...)
+	for _, secret := range secrets {
+		if secret != "" {
+			r.patterns = append(r.patterns, []byte(secret))
+			encoded := base64.StdEncoding.EncodeToString([]byte(secret))
+			if encoded != secret {
+				r.patterns = append(r.patterns, []byte(encoded))
+			}
 		}
 	}
 	return r
@@ -222,7 +229,7 @@ func (r *Redactor) writeMasked(src []byte, limit int) (int, error) {
 
 // AuthEnv returns Git's config-based HTTP Basic authentication environment. It leaves the URL out of argv.
 func AuthEnv(repoURL, username, token, home string) ([]string, error) {
-	base := []string{"GIT_TERMINAL_PROMPT=0", "LC_ALL=C", "HOME=" + home}
+	base := []string{"GIT_TERMINAL_PROMPT=0", "LC_ALL=C", "HOME=" + home, "GIT_CONFIG_NOSYSTEM=1"}
 	if token == "" {
 		return base, nil
 	}

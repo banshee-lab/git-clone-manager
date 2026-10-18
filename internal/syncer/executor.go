@@ -116,23 +116,23 @@ func (e *Executor) Run(ctx context.Context, repo model.Repository, req Request, 
 			args = append(args, "--branch", repo.Branch)
 		}
 		args = append(args, repo.URL, repo.Path)
-		if err = gitx.Run(ctx, gitx.Spec{Dir: filepath.Dir(repo.Path), Args: args, Env: e.gitEnv(repo), Out: out, Timeout: e.gitTimeout(), Token: repo.AccessToken}); err != nil {
+		if err = gitx.Run(ctx, gitx.Spec{Dir: filepath.Dir(repo.Path), Args: args, Env: e.gitEnv(repo), Out: out, Timeout: e.gitTimeout(), Token: repo.AccessToken, Redact: e.gitSecrets(repo)}); err != nil {
 			return e.fail(out, &result, model.StageClone, stageError("clone", err))
 		}
 	} else {
-		if _, repoErr := gitOutput(ctx, repo.Path, e.gitTimeout(), e.gitEnv(repo), "git", "rev-parse", "--is-inside-work-tree"); repoErr != nil {
+		if _, repoErr := e.gitOutput(ctx, repo, "git", "rev-parse", "--is-inside-work-tree"); repoErr != nil {
 			result.Action = model.ActionClone
 			return e.fail(out, &result, model.StageClone, errors.New("clone path is not empty and is not a Git repository"))
 		}
 		result.Action = model.ActionPull
-		origin, originErr := gitOutput(ctx, repo.Path, e.gitTimeout(), e.gitEnv(repo), "git", "config", "--get", "remote.origin.url")
+		origin, originErr := e.gitOutput(ctx, repo, "git", "config", "--get", "remote.origin.url")
 		if originErr != nil {
 			return e.fail(out, &result, model.StageInternal, fmt.Errorf("read origin URL: %w", originErr))
 		}
 		if strings.TrimSpace(origin) != repo.URL {
 			return e.fail(out, &result, model.StageInternal, errors.New("origin URL differs from configured repository URL"))
 		}
-		before, beforeErr := gitOutput(ctx, repo.Path, e.gitTimeout(), e.gitEnv(repo), "git", "rev-parse", "--short", "HEAD")
+		before, beforeErr := e.gitOutput(ctx, repo, "git", "rev-parse", "--short", "HEAD")
 		if beforeErr != nil {
 			return e.fail(out, &result, model.StageInternal, fmt.Errorf("resolve current commit: %w", beforeErr))
 		}
@@ -154,7 +154,7 @@ func (e *Executor) Run(ctx context.Context, repo model.Repository, req Request, 
 		if err = e.git(ctx, repo, out, "git", "fetch", "origin", "+refs/heads/"+branch+":refs/remotes/origin/"+branch); err != nil {
 			return e.fail(out, &result, model.StageFetch, stageError("fetch", err))
 		}
-		current, _ := gitOutput(ctx, repo.Path, e.gitTimeout(), e.gitEnv(repo), "git", "symbolic-ref", "--short", "HEAD")
+		current, _ := e.gitOutput(ctx, repo, "git", "symbolic-ref", "--short", "HEAD")
 		if strings.TrimSpace(current) != branch {
 			if _, err = fmt.Fprintln(out, "[gitsync] --- checkout ---"); err != nil {
 				return result, err
@@ -180,13 +180,13 @@ func (e *Executor) Run(ctx context.Context, repo model.Repository, req Request, 
 		}
 	}
 	if result.Action == model.ActionClone {
-		resolved, resolveErr := gitOutput(ctx, repo.Path, e.gitTimeout(), e.gitEnv(repo), "git", "symbolic-ref", "--short", "HEAD")
+		resolved, resolveErr := e.gitOutput(ctx, repo, "git", "symbolic-ref", "--short", "HEAD")
 		if resolveErr != nil {
 			return e.fail(out, &result, model.StageInternal, fmt.Errorf("resolve cloned branch: %w", resolveErr))
 		}
 		result.ResolvedBranch = strings.TrimSpace(resolved)
 	}
-	after, afterErr := gitOutput(ctx, repo.Path, e.gitTimeout(), e.gitEnv(repo), "git", "rev-parse", "--short", "HEAD")
+	after, afterErr := e.gitOutput(ctx, repo, "git", "rev-parse", "--short", "HEAD")
 	if afterErr != nil {
 		return e.fail(out, &result, model.StageInternal, fmt.Errorf("resolve resulting commit: %w", afterErr))
 	}
@@ -234,25 +234,30 @@ func (e *Executor) fail(out io.Writer, r *Result, stage model.Stage, err error) 
 }
 
 func (e *Executor) git(ctx context.Context, repo model.Repository, out io.Writer, args ...string) error {
-	return gitx.Run(ctx, gitx.Spec{Dir: repo.Path, Args: args, Env: e.gitEnv(repo), Out: out, Timeout: e.gitTimeout(), Token: repo.AccessToken})
+	return gitx.Run(ctx, gitx.Spec{Dir: repo.Path, Args: args, Env: e.gitEnv(repo), Out: out, Timeout: e.gitTimeout(), Token: repo.AccessToken, Redact: e.gitSecrets(repo)})
 }
 
 func (e *Executor) gitTimeout() time.Duration { return e.GitTimeout }
 
 func (e *Executor) gitEnv(repo model.Repository) []string {
-	env := make([]string, 0, len(os.Environ()))
-	for _, item := range os.Environ() {
-		key, _, ok := strings.Cut(item, "=")
-		if ok && key != "GIT_CONFIG" && !strings.HasPrefix(key, "GIT_CONFIG_") {
-			env = append(env, item)
-		}
-	}
+	env := []string{"PATH=" + os.Getenv("PATH")}
 	username := repo.AccessUsername
 	if username == "" {
 		username = "git"
 	}
 	pairs, _ := gitx.AuthEnv(repo.URL, username, repo.AccessToken, e.Home)
-	return mergeEnv(env, pairs)
+	return append(env, pairs...)
+}
+
+func (e *Executor) gitSecrets(repo model.Repository) []string {
+	if repo.AccessToken == "" {
+		return nil
+	}
+	username := repo.AccessUsername
+	if username == "" {
+		username = "git"
+	}
+	return []string{username + ":" + repo.AccessToken}
 }
 
 func (e *Executor) defaultBranch(ctx context.Context, repo model.Repository, out io.Writer) (string, error) {
@@ -261,7 +266,7 @@ func (e *Executor) defaultBranch(ctx context.Context, repo model.Repository, out
 	}
 	var output strings.Builder
 	args := []string{"git", "ls-remote", "--symref", "origin", "HEAD"}
-	err := gitx.Run(ctx, gitx.Spec{Dir: repo.Path, Args: args, Env: e.gitEnv(repo), Out: &output, Timeout: e.gitTimeout(), Token: repo.AccessToken})
+	err := gitx.Run(ctx, gitx.Spec{Dir: repo.Path, Args: args, Env: e.gitEnv(repo), Out: &output, Timeout: e.gitTimeout(), Token: repo.AccessToken, Redact: e.gitSecrets(repo)})
 	if err != nil {
 		return "", stageError("branch resolution", err)
 	}
@@ -279,7 +284,7 @@ func (e *Executor) checkout(ctx context.Context, repo model.Repository, out io.W
 	if repo.HardReset {
 		args = append(args, "-f")
 	}
-	if _, err := gitOutput(ctx, repo.Path, e.gitTimeout(), e.gitEnv(repo), "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+	if _, err := e.gitOutput(ctx, repo, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 			return err
@@ -299,12 +304,12 @@ func validateBranch(ctx context.Context, repo model.Repository, e *Executor, out
 	if _, err := os.Stat(dir); err != nil {
 		dir = e.Home
 	}
-	return gitx.Run(ctx, gitx.Spec{Dir: dir, Args: []string{"git", "check-ref-format", "--branch", branch}, Env: e.gitEnv(repo), Out: io.Discard, Timeout: e.gitTimeout(), Token: repo.AccessToken})
+	return gitx.Run(ctx, gitx.Spec{Dir: dir, Args: []string{"git", "check-ref-format", "--branch", branch}, Env: e.gitEnv(repo), Out: io.Discard, Timeout: e.gitTimeout(), Token: repo.AccessToken, Redact: e.gitSecrets(repo)})
 }
 
-func gitOutput(ctx context.Context, dir string, timeout time.Duration, env []string, args ...string) (string, error) {
+func (e *Executor) gitOutput(ctx context.Context, repo model.Repository, args ...string) (string, error) {
 	var output strings.Builder
-	if err := gitx.Run(ctx, gitx.Spec{Dir: dir, Args: args, Env: env, Out: &output, Timeout: timeout}); err != nil {
+	if err := gitx.Run(ctx, gitx.Spec{Dir: repo.Path, Args: args, Env: e.gitEnv(repo), Out: &output, Timeout: e.gitTimeout(), Token: repo.AccessToken, Redact: e.gitSecrets(repo)}); err != nil {
 		return "", err
 	}
 	text := output.String()
@@ -337,27 +342,6 @@ func (e *Executor) postEnv(repo model.Repository, req Request, result Result) []
 		}
 	}
 	return base
-}
-
-func mergeEnv(env, values []string) []string {
-	m := make(map[string]string, len(env)+len(values))
-	for _, item := range env {
-		key, value, ok := strings.Cut(item, "=")
-		if ok {
-			m[key] = value
-		}
-	}
-	for _, item := range values {
-		key, value, ok := strings.Cut(item, "=")
-		if ok {
-			m[key] = value
-		}
-	}
-	out := make([]string, 0, len(m))
-	for key, value := range m {
-		out = append(out, key+"="+value)
-	}
-	return out
 }
 
 func validateURL(raw string) error {

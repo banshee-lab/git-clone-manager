@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"gitsync/internal/gitx"
 	"gitsync/internal/model"
 )
 
@@ -263,16 +264,35 @@ func TestGitEnvironmentReplacesAmbientConfig(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "4")
 	t.Setenv("GIT_CONFIG_KEY_3", "http.*.extraHeader")
 	t.Setenv("GIT_CONFIG_VALUE_3", "Authorization: Basic ambient-secret")
+	t.Setenv("GIT_TRACE_CURL", "1")
+	t.Setenv("GIT_CURL_VERBOSE", "1")
 	repo := model.Repository{URL: "https://git.example:9443/team/repo.git"}
 	pairs := e.gitEnv(repo)
 	joined := strings.Join(pairs, "\n")
-	if strings.Contains(joined, "GIT_CONFIG_") || strings.Contains(joined, "ambient-secret") {
-		t.Fatalf("ambient Git config leaked into child env: %s", joined)
+	for _, ambient := range []string{"GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_3", "GIT_CONFIG_VALUE_3", "GIT_TRACE_CURL", "GIT_CURL_VERBOSE"} {
+		if strings.Contains(joined, ambient+"=") {
+			t.Fatalf("ambient Git setting %s leaked into child env: %s", ambient, joined)
+		}
+	}
+	if !strings.Contains(joined, "GIT_CONFIG_NOSYSTEM=1") {
+		t.Fatalf("system Git config was not disabled: %s", joined)
 	}
 	repo.AccessToken, repo.AccessUsername = "secret-token", "alice"
 	pairs = e.gitEnv(repo)
 	joined = strings.Join(pairs, "\n")
 	if !strings.Contains(joined, "GIT_CONFIG_COUNT=1") || !strings.Contains(joined, "GIT_CONFIG_KEY_0=http.https://git.example:9443/.extraHeader") || strings.Contains(joined, "GIT_CONFIG_KEY_3") || strings.Contains(joined, "secret-token") {
 		t.Fatalf("unexpected authenticated Git env: %s", joined)
+	}
+
+	program := filepath.Join(t.TempDir(), "fake-git")
+	if err := os.WriteFile(program, []byte("#!/bin/sh\nif [ -n \"${GIT_TRACE_CURL-}${GIT_CURL_VERBOSE-}\" ]; then printf '%s\\n%s\\n' \"${GIT_CONFIG_VALUE_0-}\" \"${GIT_CONFIG_VALUE_3-}\"; fi\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := gitx.Run(context.Background(), gitx.Spec{Args: []string{program}, Env: pairs, Out: &output, Timeout: time.Second, Token: repo.AccessToken, Redact: e.gitSecrets(repo)}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "Basic ") || strings.Contains(output.String(), "secret-token") || strings.Contains(output.String(), "ambient-secret") {
+		t.Fatalf("credential exposed through ambient tracing: %q", output.String())
 	}
 }

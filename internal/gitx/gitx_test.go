@@ -32,6 +32,27 @@ func TestRedactorMasksAcrossWrites(t *testing.T) {
 	}
 }
 
+func TestRedactorMasksBasicCredential(t *testing.T) {
+	var got bytes.Buffer
+	credential := "alice:private-token"
+	encoded := base64.StdEncoding.EncodeToString([]byte(credential))
+	r := NewRedactor(&got, "private-token", credential)
+	for _, chunk := range []string{"Authorization: Basic " + encoded[:5], encoded[5:11], encoded[11:]} {
+		if _, err := r.Write([]byte(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got.String(), encoded) || strings.Contains(got.String(), credential) || strings.Contains(got.String(), "private-token") {
+		t.Fatalf("credential leaked: %q", got.String())
+	}
+	if !strings.Contains(got.String(), "Authorization: Basic ***") {
+		t.Fatalf("encoded credential was not masked: %q", got.String())
+	}
+}
+
 func TestAuthEnvScopesHostAndPort(t *testing.T) {
 	env, err := AuthEnv("https://git.example:8443/org/repo.git", "alice", "token", "/data/home")
 	if err != nil {
