@@ -249,7 +249,7 @@ func (w *webhook) send(ctx context.Context, item notification) (int, error) {
 			Name   string `json:"name"`
 			URL    string `json:"url"`
 			Branch string `json:"branch"`
-		}{item.Repository.ID, item.Repository.Name, item.Repository.URL, item.Repository.Branch},
+		}{item.Repository.ID, item.Repository.Name, sanitizedRepositoryURL(item.Repository.URL), item.Repository.Branch},
 		Activity: struct {
 			ID          string               `json:"id"`
 			Status      model.ActivityStatus `json:"status"`
@@ -291,6 +291,15 @@ func (w *webhook) send(ctx context.Context, item notification) (int, error) {
 		return 0, errors.New("webhook request failed")
 	}
 	return status, nil
+}
+
+func sanitizedRepositoryURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	parsed.User = nil
+	return parsed.String()
 }
 
 func postJSON(ctx context.Context, client *http.Client, target string, body []byte, headers http.Header) (int, error) {

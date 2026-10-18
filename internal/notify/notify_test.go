@@ -128,6 +128,7 @@ func TestWebhookPayloadHeadersAndSignature(t *testing.T) {
 	const secret = "signing-secret"
 	item := testNotification(model.ActivityInterrupted)
 	item.LogTail = "last 40 lines"
+	item.Repository.URL = "https://repo-user:repo-password@git.example/repo.git"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type = %q", got)
@@ -141,6 +142,9 @@ func TestWebhookPayloadHeadersAndSignature(t *testing.T) {
 		body := new(bytes.Buffer)
 		if _, err := body.ReadFrom(r.Body); err != nil {
 			t.Errorf("read body: %v", err)
+		}
+		if strings.Contains(body.String(), "repo-user") || strings.Contains(body.String(), "repo-password") {
+			t.Errorf("webhook payload exposed repository URL credentials: %s", body.String())
 		}
 		mac := hmac.New(sha256.New, []byte(secret))
 		if _, err := mac.Write(body.Bytes()); err != nil {
@@ -180,7 +184,7 @@ func assertWebhookPayload(t *testing.T, payload map[string]any, item notificatio
 	}
 	repository, ok := payload["repository"].(map[string]any)
 	if !ok || repository["id"] != item.Repository.ID || repository["name"] != item.Repository.Name ||
-		repository["url"] != item.Repository.URL || repository["branch"] != item.Repository.Branch {
+		repository["url"] != "https://git.example/repo.git" || repository["branch"] != item.Repository.Branch {
 		t.Fatalf("repository payload = %#v", payload["repository"])
 	}
 	activity, ok := payload["activity"].(map[string]any)
