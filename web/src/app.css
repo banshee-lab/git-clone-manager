@@ -1,0 +1,11 @@
+@import "@runwisp/ui/theme.css";
+
+@source '../../node_modules/@runwisp/ui/src';
+
+:root {
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
+}
