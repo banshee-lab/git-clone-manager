@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"gitsync/internal/config"
 	"gitsync/internal/respond"
 	"gitsync/internal/webui"
 )
@@ -29,18 +30,38 @@ func run() error {
 	configPath := flag.String("config", "", "path to the YAML configuration file")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
-	_ = configPath // Configuration loading is added in Phase 2.
-
 	if *showVersion {
 		fmt.Println(version)
 		return nil
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	level := new(slog.LevelVar)
+	switch cfg.Log.Level {
+	case "debug":
+		level.Set(slog.LevelDebug)
+	case "warn":
+		level.Set(slog.LevelWarn)
+	case "error":
+		level.Set(slog.LevelError)
+	default:
+		level.Set(slog.LevelInfo)
+	}
+	var handler slog.Handler
+	if cfg.Log.Format == "text" {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	}
+	logger := slog.New(handler)
 	slog.SetDefault(logger)
+	logger.Info("loaded configuration", "config", cfg.Redacted())
 
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              cfg.Server.Listen,
 		Handler:           newMux(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -65,7 +86,7 @@ func run() error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Server.ShutdownTimeout))
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shut down HTTP server: %w", err)

@@ -1,0 +1,50 @@
+# Public address used for OIDC redirects, secure cookies, and webhook URLs.
+server:
+  listen: ":8080"
+  base_url: "${GITSYNC_PUBLIC_URL}"
+  shutdown_timeout: 30s
+
+storage:
+  data_dir: /data
+  repos_root: /repos
+  # Defaults to <data_dir>/logs when omitted.
+  logs_dir: /data/logs
+
+log:
+  level: info # debug, info, warn, error
+  format: json # json or text
+
+oidc:
+  issuer_url: "${OIDC_ISSUER_URL}"
+  client_id: "${OIDC_CLIENT_ID}"
+  client_secret: "${OIDC_CLIENT_SECRET}"
+  # Defaults to <server.base_url>/auth/callback.
+  redirect_url: ""
+  scopes: [openid, profile, email]
+  session_secret: "${GITSYNC_SESSION_SECRET}"
+  session_ttl: 12h
+
+sync:
+  max_concurrent: 3
+  git_timeout: 30m
+  post_command_timeout: 10m
+  env_passthrough: []
+
+history:
+  max_items: 50
+
+webhooks:
+  secret: "${GITSYNC_WEBHOOK_SECRET}"
+
+notifications:
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  webhook:
+    enabled: false
+    url: ""
+    headers:
+      Authorization: "${NOTIFICATION_WEBHOOK_AUTH}"
+    secret: "${NOTIFICATION_WEBHOOK_SECRET}"
+    timeout: 10s
