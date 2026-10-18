@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"gitsync/internal/auth"
 	"gitsync/internal/config"
 	"gitsync/internal/events"
 	"gitsync/internal/gitx"
@@ -65,6 +66,10 @@ func run() error {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 	logger.Info("loaded configuration", "config", cfg.Redacted())
+	authService, err := auth.New(context.Background(), cfg)
+	if err != nil {
+		return fmt.Errorf("initialize mandatory OIDC authentication: %w", err)
+	}
 	if _, err := gitx.MakeHome(cfg.Storage.DataDir); err != nil {
 		return err
 	}
@@ -101,10 +106,14 @@ func run() error {
 	if err := cleaner.Startup(context.Background()); err != nil {
 		return fmt.Errorf("startup history cleanup: %w", err)
 	}
+	appHandler, err := newMux(cfg, authService)
+	if err != nil {
+		return err
+	}
 
 	server := &http.Server{
 		Addr:              cfg.Server.Listen,
-		Handler:           newMux(),
+		Handler:           appHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -136,11 +145,19 @@ func run() error {
 	return <-serverErr
 }
 
-func newMux() *http.ServeMux {
+func newMux(cfg config.Config, authService *auth.Service) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
+	mux.HandleFunc("GET /auth/login", authService.Login)
+	mux.HandleFunc("GET /auth/callback", authService.Callback)
+	mux.HandleFunc("POST /auth/logout", authService.Logout)
+	mux.Handle("GET /api/me", authService.RequireSession(http.HandlerFunc(auth.Me)))
 	mux.Handle("/", webui.Handler())
-	return mux
+	protection, err := auth.NewCSRFProtection(cfg.Server.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("configure cross-origin protection: %w", err)
+	}
+	return protection.Handler(mux), nil
 }
 
 func healthz(w http.ResponseWriter, _ *http.Request) {
