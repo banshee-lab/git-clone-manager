@@ -124,6 +124,7 @@ func (s *Service) Meta(w http.ResponseWriter, r *http.Request) {
 		"history_max_items":                s.cfg.History.MaxItems,
 		"repos_root":                       s.cfg.Storage.ReposRoot,
 		"global_webhook_secret_configured": s.cfg.Webhooks.Secret != "",
+		"data_dir":                         s.cfg.Storage.DataDir,
 	})
 }
 
@@ -184,7 +185,15 @@ func (s *Service) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 	latestByRepo := map[string]model.Activity{}
 	for _, act := range all {
+		if !act.Status.IsFinished() {
+			continue
+		}
 		if _, exists := latestByRepo[act.RepositoryID]; !exists || act.CreatedAt.After(latestByRepo[act.RepositoryID].CreatedAt) {
+			latestByRepo[act.RepositoryID] = act
+		}
+	}
+	for _, act := range all {
+		if _, exists := latestByRepo[act.RepositoryID]; !exists {
 			latestByRepo[act.RepositoryID] = act
 		}
 	}
@@ -233,8 +242,9 @@ func (s *Service) GetRepository(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusUnauthorized, "unauthorized", "authentication required")
 		return
 	}
+	ctx := r.Context()
 	id := r.PathValue("id")
-	repo, err := s.repos.Get(r.Context(), id)
+	repo, err := s.repos.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			respond.Error(w, http.StatusNotFound, "not_found", "repository not found")
@@ -244,6 +254,31 @@ func (s *Service) GetRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := Repository{ID: repo.ID, Name: repo.Name, URL: repo.URL, Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookSecret: repo.WebhookSecret, WebhookURL: strings.TrimRight(s.cfg.Server.BaseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
+	list, err := s.activities.ListByRepository(ctx, repo.ID, 20, nil)
+	if err == nil {
+		for _, act := range list {
+			if act.Status.IsFinished() {
+				copy := act
+				view.LastActivity = &copy
+				break
+			}
+		}
+		if view.LastActivity == nil && len(list) > 0 {
+			copy := list[0]
+			view.LastActivity = &copy
+		}
+	}
+	active, err := s.activities.ListActive(ctx)
+	if err == nil {
+		for _, act := range active {
+			if act.RepositoryID == repo.ID {
+				view.RunningActivityID = act.ID
+				if act.Status == model.ActivityRunning {
+					break
+				}
+			}
+		}
+	}
 	respond.JSON(w, http.StatusOK, view)
 }
 

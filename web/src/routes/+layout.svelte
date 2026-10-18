@@ -35,11 +35,14 @@
 
   $effect(() => {
     try {
-      const pathname = page?.url?.pathname ?? (typeof window !== "undefined" ? window.location.pathname : "/");
+      const pathname =
+        page?.url?.pathname ??
+        (typeof window !== "undefined" ? window.location.pathname : "/");
       const match = /^\/repositories\/([^/]+)(?:\/edit)?$/.exec(pathname);
       repositories.select(match ? match[1] : null);
     } catch {
-      const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
+      const pathname =
+        typeof window !== "undefined" ? window.location.pathname : "/";
       const match = /^\/repositories\/([^/]+)(?:\/edit)?$/.exec(pathname);
       repositories.select(match ? match[1] : null);
     }

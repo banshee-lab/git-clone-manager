@@ -26,6 +26,34 @@ describe("repository form helpers", () => {
     expect(errors.access_username).toBe("Access username is required.");
   });
 
+  it("validates dataDir boundaries and overlapping existing repository paths", () => {
+    const dataDirErrors = validateRepositoryForm(
+      {
+        name: "Repo",
+        url: "https://example.test/repo.git",
+        path: "/data/repos/repo",
+        access_username: "git",
+      },
+      { dataDir: "/data" },
+    );
+    expect(dataDirErrors.path).toBe(
+      "Clone path cannot be inside the storage data_dir.",
+    );
+
+    const overlapErrors = validateRepositoryForm(
+      {
+        name: "Repo",
+        url: "https://example.test/repo.git",
+        path: "/repos/app/sub",
+        access_username: "git",
+      },
+      { existingPaths: ["/repos/app"] },
+    );
+    expect(overlapErrors.path).toBe(
+      "Clone path overlaps another repository path.",
+    );
+  });
+
   it("keeps, replaces or clears access and webhook secrets correctly", () => {
     expect(
       buildRepositoryPayload(
@@ -88,5 +116,41 @@ describe("repository form helpers", () => {
     ).toMatchObject({
       webhook_secret: "",
     });
+
+    expect(
+      buildRepositoryPayload(
+        {
+          name: "Repo",
+          url: "https://example.test/repo.git",
+          branch: "main",
+          path: "/repos/repo",
+          access_username: "git",
+          access_token: "",
+          post_command: "echo ok",
+          hard_reset: false,
+        },
+        "edit",
+        "replace",
+        "keep",
+      ),
+    ).not.toHaveProperty("access_token");
+
+    expect(
+      buildRepositoryPayload(
+        {
+          name: "Repo",
+          url: "https://example.test/repo.git",
+          branch: "main",
+          path: "/repos/repo",
+          access_username: "git",
+          post_command: "echo ok",
+          hard_reset: false,
+          webhook_secret: "",
+        },
+        "edit",
+        "keep",
+        "replace",
+      ),
+    ).not.toHaveProperty("webhook_secret");
   });
 });

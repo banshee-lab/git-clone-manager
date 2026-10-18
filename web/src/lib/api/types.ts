@@ -26,6 +26,7 @@ export interface ApiMeta {
   history_max_items: number;
   repos_root: string;
   global_webhook_secret_configured: boolean;
+  data_dir?: string;
 }
 
 export interface ActivitySummary {

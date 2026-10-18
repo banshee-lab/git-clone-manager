@@ -2,12 +2,15 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"gitsync/internal/auth"
 	"gitsync/internal/config"
 	"gitsync/internal/logstore"
 	"gitsync/internal/model"
@@ -102,6 +105,43 @@ func TestRepositoryOutputIncludesWebhookSecret(t *testing.T) {
 	out := repositoryOut(repo, "https://example.com")
 	if out.WebhookSecret != "super-secret" {
 		t.Fatalf("secret omitted from repository payload: got %q want %q", out.WebhookSecret, "super-secret")
+	}
+}
+
+func TestGetRepositoryIncludesLatestAndRunningActivity(t *testing.T) {
+	cfg := config.Default()
+	repos, acts := store.NewMemory()
+	repo := model.Repository{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Name: "alpha", URL: "https://example.com/repo.git", Branch: "main", Path: "/tmp/repo-alpha", AccessUsername: "git", WebhookSecret: "secret"}
+	if err := repos.Create(context.Background(), &repo); err != nil {
+		t.Fatalf("create repo: %v", err)
+	}
+	last := model.Activity{ID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", RepositoryID: repo.ID, RepositoryName: repo.Name, Status: model.ActivitySuccess, Trigger: model.TriggerManual, Source: model.SourceManual, TriggeredBy: "admin", Summary: "done", CreatedAt: time.Now().UTC()}
+	if err := acts.Create(context.Background(), &last); err != nil {
+		t.Fatalf("create last activity: %v", err)
+	}
+	running := model.Activity{ID: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", RepositoryID: repo.ID, RepositoryName: repo.Name, Status: model.ActivityRunning, Trigger: model.TriggerManual, Source: model.SourceManual, TriggeredBy: "admin", Summary: "running", CreatedAt: time.Now().UTC().Add(time.Minute)}
+	if err := acts.Create(context.Background(), &running); err != nil {
+		t.Fatalf("create running activity: %v", err)
+	}
+	service := &Service{cfg: cfg, repos: repos, activities: acts}
+	req := httptest.NewRequest("GET", "/api/repositories/"+repo.ID, nil)
+	req.SetPathValue("id", repo.ID)
+	user := auth.User{Sub: "user-1", Email: "admin@example.test", Name: "Admin User", Role: "admin"}
+	req = req.WithContext(auth.ContextWithUser(req.Context(), user))
+	rec := httptest.NewRecorder()
+	service.GetRepository(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("get repository status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got Repository
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode repository: %v", err)
+	}
+	if got.LastActivity == nil || got.LastActivity.ID != last.ID {
+		t.Fatalf("last_activity missing or wrong: %+v", got.LastActivity)
+	}
+	if got.RunningActivityID != running.ID {
+		t.Fatalf("running_activity_id missing or wrong: got %q want %q", got.RunningActivityID, running.ID)
 	}
 }
 

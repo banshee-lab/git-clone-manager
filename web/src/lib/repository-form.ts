@@ -51,6 +51,10 @@ export function validateRepositoryForm(
     path?: string;
     access_username?: string;
   },
+  options: {
+    dataDir?: string;
+    existingPaths?: string[];
+  } = {},
 ): Record<string, string> {
   const errors: Record<string, string> = {};
   const name = (input.name ?? "").trim();
@@ -97,6 +101,20 @@ export function validateRepositoryForm(
       errors.path = "Clone path must be normalized and absolute.";
     } else if (path === "/") {
       errors.path = "Clone path must be an absolute clone path.";
+    } else if (options.dataDir) {
+      const dataDir = (options.dataDir ?? "").trim();
+      if (dataDir && isInsideDir(path, dataDir)) {
+        errors.path = "Clone path cannot be inside the storage data_dir.";
+      }
+    }
+    if (!errors.path && options.existingPaths?.length) {
+      for (const existing of options.existingPaths) {
+        if (!existing || existing === path) continue;
+        if (isPathOverlap(path, existing)) {
+          errors.path = "Clone path overlaps another repository path.";
+          break;
+        }
+      }
     }
   }
 
@@ -122,6 +140,28 @@ export function validateRepositoryForm(
   }
 
   return errors;
+}
+
+function isInsideDir(path: string, dir: string): boolean {
+  const base = (dir ?? "").trim();
+  const candidate = (path ?? "").trim();
+  if (!candidate || !base || candidate === base) return false;
+  const relative = candidate.startsWith(base)
+    ? candidate.slice(base.length)
+    : "";
+  return (
+    relative === "" ||
+    (relative.startsWith("/") &&
+      !relative.startsWith("../") &&
+      relative !== "/..")
+  );
+}
+
+function isPathOverlap(a: string, b: string): boolean {
+  const left = a.trim();
+  const right = b.trim();
+  if (!left || !right || left === right) return left === right;
+  return left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
 export function buildRepositoryPayload(
@@ -154,10 +194,14 @@ export function buildRepositoryPayload(
   };
 
   if (mode === "create") {
-    if (input.access_token) {
+    if (input.access_token && input.access_token.trim() !== "") {
       payload.access_token = input.access_token;
     }
-    if (secretMode === "replace" && input.webhook_secret) {
+    if (
+      secretMode === "replace" &&
+      input.webhook_secret &&
+      input.webhook_secret.trim() !== ""
+    ) {
       payload.webhook_secret = input.webhook_secret;
     }
     if (secretMode === "clear") {
@@ -166,7 +210,11 @@ export function buildRepositoryPayload(
     return payload;
   }
 
-  if (tokenMode === "replace" && input.access_token !== undefined) {
+  if (
+    tokenMode === "replace" &&
+    input.access_token !== undefined &&
+    input.access_token !== ""
+  ) {
     payload.access_token = input.access_token;
   }
   if (tokenMode === "clear") {
@@ -175,7 +223,11 @@ export function buildRepositoryPayload(
   if (secretMode === "clear") {
     payload.webhook_secret = "";
   }
-  if (secretMode === "replace" && input.webhook_secret !== undefined) {
+  if (
+    secretMode === "replace" &&
+    input.webhook_secret !== undefined &&
+    input.webhook_secret !== ""
+  ) {
     payload.webhook_secret = input.webhook_secret;
   }
 

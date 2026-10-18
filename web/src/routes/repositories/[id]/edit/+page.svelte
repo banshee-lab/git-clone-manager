@@ -3,7 +3,12 @@
   import { Button, Heading, Input, Textarea, Toggle, toast } from "@runwisp/ui";
   import { page } from "$app/state";
   import { resolve } from "$app/paths";
-  import { getRepository, updateRepository } from "#lib/api/client";
+  import {
+    getMeta,
+    getRepository,
+    listRepositories,
+    updateRepository,
+  } from "#lib/api/client";
   import {
     buildRepositoryPayload,
     generateWebhookSecret,
@@ -26,6 +31,10 @@
   });
   let errors = $state<Record<string, string>>({});
   let reposRoot = $state("/repos");
+  let dataDir = $state("");
+  let existingPaths = $state<string[]>([]);
+  let originalPath = $state("");
+  let hasToken = $state(false);
   let pathTouched = $state(false);
   let saving = $state(false);
   let tokenMode = $state<TokenMode>("keep");
@@ -36,11 +45,27 @@
     const id = page.params.id;
     if (!id) return;
     try {
+      const meta = await getMeta();
+      reposRoot = meta.repos_root || "/repos";
+      dataDir = meta.data_dir || "";
+    } catch {
+      reposRoot = "/repos";
+      dataDir = "";
+    }
+    try {
+      const all = await listRepositories();
+      existingPaths = all.filter((r) => r.id !== id).map((r) => r.path);
+    } catch {
+      existingPaths = [];
+    }
+    try {
       const repository = await getRepository(id);
       form.name = repository.name;
       form.url = repository.url;
       form.branch = repository.branch;
       form.path = repository.path;
+      originalPath = repository.path;
+      hasToken = repository.has_access_token;
       form.access_username = repository.access_username;
       form.post_command = repository.post_command ?? "";
       form.post_command_timeout_seconds =
@@ -65,7 +90,14 @@
   }
 
   async function submit(): Promise<void> {
-    const nextErrors = validateRepositoryForm(form);
+    const nextErrors = validateRepositoryForm(form, {
+      dataDir,
+      existingPaths,
+    });
+    if (tokenMode === "replace" && !form.access_token.trim()) {
+      nextErrors.access_token =
+        "A new access token is required when replacing.";
+    }
     errors = nextErrors;
     if (Object.keys(nextErrors).length > 0) {
       toast.error("Please fix the highlighted repository settings.");
@@ -87,6 +119,17 @@
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to update repository.";
+      const lower = message.toLowerCase();
+      if (
+        lower.includes("path") ||
+        lower.includes("data_dir") ||
+        lower.includes("overlap")
+      ) {
+        errors = { ...errors, path: message };
+      }
+      if (lower.includes("name")) {
+        errors = { ...errors, name: message };
+      }
       toast.error(message);
     } finally {
       saving = false;
@@ -170,6 +213,9 @@
       <small class="hint">
         Keep an absolute path; existing files are not moved.
       </small>
+      {#if originalPath && form.path !== originalPath}
+        <small class="warning"> Warning: existing files are not moved. </small>
+      {/if}
     </div>
 
     <div class="field">
@@ -185,13 +231,26 @@
     </div>
 
     <div class="field">
-      <label for="access_token">Access token</label>
+      <div class="label-row">
+        <label for="access_token">Access token</label>
+        {#if hasToken}
+          <span class="token-badge">Token set</span>
+        {/if}
+      </div>
       <Input
         id="access_token"
         bind:value={form.access_token}
         type="password"
-        placeholder="Keep existing token"
+        placeholder={tokenMode === "keep"
+          ? "Keep existing token"
+          : tokenMode === "clear"
+            ? "Token will be cleared"
+            : "Enter new token"}
+        disabled={tokenMode === "clear"}
+        aria-invalid={Boolean(errors.access_token)}
       />
+      {#if errors.access_token}<small class="error">{errors.access_token}</small
+        >{/if}
       <div class="mode-row">
         <label class="inline-label" for="token-mode">Token mode</label>
         <select id="token-mode" bind:value={tokenMode}>
@@ -314,6 +373,21 @@
   label {
     font-weight: 600;
     color: var(--rw-on-surface);
+  }
+
+  .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .token-badge {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 9999px;
+    background: var(--rw-surface-sunken);
+    color: var(--rw-on-surface-muted);
+    font-weight: 500;
   }
 
   .hint,

@@ -43,10 +43,7 @@ export function createRepositoryStore() {
       const next = await listRepositories();
       repositories = next;
       if (selectedId && !next.some((repo) => repo.id === selectedId)) {
-        selectedId = next[0]?.id ?? null;
-      }
-      if (!selectedId && next[0]) {
-        selectedId = next[0].id;
+        selectedId = null;
       }
       error = null;
     } catch (caught) {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { Button, Heading, Input, Textarea, Toggle } from "@runwisp/ui";
-  import { createRepository, getMeta } from "#lib/api/client";
+  import { createRepository, getMeta, listRepositories } from "#lib/api/client";
   import { toast } from "@runwisp/ui";
   import {
     buildRepositoryPayload,
@@ -23,6 +23,8 @@
   });
   let errors = $state<Record<string, string>>({});
   let reposRoot = $state("/repos");
+  let dataDir = $state("");
+  let existingPaths = $state<string[]>([]);
   let pathTouched = $state(false);
   let saving = $state(false);
 
@@ -30,11 +32,18 @@
     try {
       const meta = await getMeta();
       reposRoot = meta.repos_root || "/repos";
+      dataDir = meta.data_dir || "";
       if (!pathTouched && form.path === "") {
         form.path = suggestClonePath(form.name, reposRoot);
       }
     } catch {
       reposRoot = "/repos";
+    }
+    try {
+      const repos = await listRepositories();
+      existingPaths = repos.map((r) => r.path);
+    } catch {
+      existingPaths = [];
     }
   });
 
@@ -46,7 +55,10 @@
   }
 
   async function submit(): Promise<void> {
-    const nextErrors = validateRepositoryForm(form);
+    const nextErrors = validateRepositoryForm(form, {
+      dataDir,
+      existingPaths,
+    });
     errors = nextErrors;
     if (Object.keys(nextErrors).length > 0) {
       toast.error("Please fix the highlighted repository settings.");
@@ -61,6 +73,17 @@
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to create repository.";
+      const lower = message.toLowerCase();
+      if (
+        lower.includes("path") ||
+        lower.includes("data_dir") ||
+        lower.includes("overlap")
+      ) {
+        errors = { ...errors, path: message };
+      }
+      if (lower.includes("name")) {
+        errors = { ...errors, name: message };
+      }
       toast.error(message);
     } finally {
       saving = false;

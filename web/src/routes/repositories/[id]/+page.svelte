@@ -13,6 +13,7 @@
   import {
     ApiError,
     deleteRepository,
+    getActivity,
     getActivityLog,
     getRepository,
     listActivities,
@@ -21,7 +22,7 @@
   import { events } from "#lib/events.svelte";
   import { createLogStream } from "#lib/log-stream.svelte";
   import { repositoryStatusTone } from "#lib/repositories.svelte";
-  import { formatDateTime, stripAnsi } from "#lib/utils";
+  import { formatDateTime, formatDuration, stripAnsi } from "#lib/utils";
   import type { ActivitySummary, Repository } from "#lib/api/types";
 
   const ACTIVITY_LIMIT = 20;
@@ -40,6 +41,24 @@
   let activityLoading = $state(false);
   let autoScroll = $state(true);
   let liveStream = $state<ReturnType<typeof createLogStream> | null>(null);
+  let logViewport = $state<HTMLDivElement | null>(null);
+  let now = $state(Date.now());
+
+  onMount(() => {
+    const timer = setInterval(() => {
+      now = Date.now();
+    }, 1000);
+    const unsubs = [
+      events.subscribe("activity.queued", handleActivityEvent),
+      events.subscribe("activity.started", handleActivityEvent),
+      events.subscribe("activity.finished", handleActivityEvent),
+      events.subscribe("repository.updated", () => void loadRepository()),
+    ];
+    return () => {
+      clearInterval(timer);
+      unsubs.forEach((unsub) => unsub());
+    };
+  });
 
   function updateActivityQuery(id: string | null): void {
     if (typeof window === "undefined") return;
@@ -65,6 +84,74 @@
     }
   }
 
+  function formatActivityDuration(activity: ActivitySummary): string {
+    const started = activity.started_at
+      ? new Date(activity.started_at).getTime()
+      : activity.created_at
+        ? new Date(activity.created_at).getTime()
+        : null;
+    if (!started) return "—";
+    const finished = activity.finished_at
+      ? new Date(activity.finished_at).getTime()
+      : now;
+    return formatDuration(Math.max(0, finished - started));
+  }
+
+  async function openActivity(activityId: string | null): Promise<void> {
+    if (!activityId) {
+      selectedActivityId = null;
+      updateActivityQuery(null);
+      if (liveStream) {
+        liveStream.close();
+        liveStream = null;
+      }
+      activityLog = "";
+      return;
+    }
+
+    selectedActivityId = activityId;
+    updateActivityQuery(activityId);
+
+    let picked = activities.find((entry) => entry.id === activityId);
+    if (!picked) {
+      try {
+        const detail = await getActivity(activityId);
+        if (!activities.some((entry) => entry.id === detail.id)) {
+          activities = [detail, ...activities];
+        }
+        picked = detail;
+      } catch (error) {
+        activityLog =
+          error instanceof Error ? error.message : "Unable to load activity.";
+        return;
+      }
+    }
+
+    if (picked.status === "running" || picked.status === "queued") {
+      if (liveStream) liveStream.close();
+      const stream = createLogStream(picked.id);
+      liveStream = stream;
+      stream.subscribe(() => {
+        activityLog = stripAnsi(stream.log || "");
+        if (stream.activityStatus) {
+          const act = activities.find((entry) => entry.id === picked?.id);
+          if (act && act.status !== stream.activityStatus) {
+            act.status = stream.activityStatus;
+            void loadRepository();
+          }
+        }
+      });
+      activityLog = stripAnsi(stream.log || "");
+      return;
+    }
+
+    if (liveStream) {
+      liveStream.close();
+      liveStream = null;
+    }
+    await loadActivityLog(picked.id);
+  }
+
   async function loadActivities(reset = true): Promise<void> {
     const id = page.params.id;
     if (!id) return;
@@ -75,7 +162,7 @@
     try {
       const list = await listActivities(id, {
         limit: ACTIVITY_LIMIT,
-        before: activityCursor ?? undefined,
+        before: reset ? undefined : (activityCursor ?? undefined),
       });
       if (reset) {
         activities = list;
@@ -86,45 +173,10 @@
       if (list.length > 0) {
         activityCursor = list[list.length - 1].created_at;
       }
+
       const currentQuery = page.url.searchParams.get("activity");
-      if (
-        currentQuery &&
-        !activities.some((entry) => entry.id === currentQuery)
-      ) {
-        selectedActivityId = currentQuery;
-      }
-      if (!selectedActivityId && list.length > 0) {
-        const preferred =
-          list.find(
-            (entry) => entry.status === "running" || entry.status === "queued",
-          ) ?? list[0];
-        selectedActivityId = preferred.id;
-        updateActivityQuery(selectedActivityId);
-      }
-      if (selectedActivityId) {
-        const active = activities.find(
-          (entry) => entry.id === selectedActivityId,
-        );
-        if (
-          active &&
-          (active.status === "running" || active.status === "queued")
-        ) {
-          if (liveStream) {
-            liveStream.close();
-          }
-          const stream = createLogStream(active.id);
-          liveStream = stream;
-          stream.subscribe(() => {
-            activityLog = stripAnsi(stream.log || "");
-          });
-          activityLog = stripAnsi(stream.log || "");
-        } else {
-          if (liveStream) {
-            liveStream.close();
-            liveStream = null;
-          }
-          await loadActivityLog(selectedActivityId);
-        }
+      if (currentQuery) {
+        void openActivity(currentQuery);
       }
     } catch (error) {
       loadError =
@@ -163,7 +215,13 @@
     const payload = (event as { activity?: ActivitySummary })?.activity;
     if (!payload || !repository || payload.repository_id !== repository.id)
       return;
-    void loadActivities(true);
+    const existingIndex = activities.findIndex((a) => a.id === payload.id);
+    if (existingIndex >= 0) {
+      activities[existingIndex] = { ...activities[existingIndex], ...payload };
+    } else {
+      activities = [payload, ...activities];
+    }
+    void loadRepository();
   }
 
   $effect(() => {
@@ -173,27 +231,22 @@
   });
 
   $effect(() => {
-    if (!selectedActivityId) return;
-    updateActivityQuery(selectedActivityId);
-    const picked = activities.find((entry) => entry.id === selectedActivityId);
-    if (!picked) return;
-    if (picked.status === "queued" || picked.status === "running") {
-      if (liveStream) {
-        liveStream.close();
+    const queryId = page.url.searchParams.get("activity");
+    if (queryId && queryId !== selectedActivityId) {
+      void openActivity(queryId);
+    } else if (!queryId && selectedActivityId) {
+      void openActivity(null);
+    }
+  });
+
+  $effect(() => {
+    if (!autoScroll || !logViewport) return;
+    void activityLog;
+    queueMicrotask(() => {
+      if (logViewport) {
+        logViewport.scrollTop = logViewport.scrollHeight;
       }
-      const stream = createLogStream(picked.id);
-      liveStream = stream;
-      stream.subscribe(() => {
-        activityLog = stripAnsi(stream.log || "");
-      });
-      activityLog = stripAnsi(stream.log || "");
-      return;
-    }
-    if (liveStream) {
-      liveStream.close();
-      liveStream = null;
-    }
-    void loadActivityLog(selectedActivityId);
+    });
   });
 
   async function handleSyncNow(): Promise<void> {
@@ -380,39 +433,49 @@
         {#if activities.length === 0}
           <p class="empty-state">No activity yet.</p>
         {:else}
+          {@const liveActivity = activities.find(
+            (entry) => entry.status === "running" || entry.status === "queued",
+          )}
+          {#if !selectedActivityId && liveActivity}
+            <div class="live-view-row">
+              <Button
+                type="button"
+                variant="secondary"
+                onclick={() => void openActivity(liveActivity.id)}
+              >
+                Running — view live output
+              </Button>
+            </div>
+          {/if}
           <ul class="activity-list">
             {#each activities as activity (activity.id)}
               <li>
                 <button
                   type="button"
                   class:selected={selectedActivityId === activity.id}
-                  onclick={() => {
-                    selectedActivityId = activity.id;
-                    updateActivityQuery(activity.id);
-                    if (
-                      activity.status === "running" ||
-                      activity.status === "queued"
-                    ) {
-                      if (liveStream) liveStream.close();
-                      const stream = createLogStream(activity.id);
-                      liveStream = stream;
-                      stream.subscribe(() => {
-                        activityLog = stripAnsi(stream.log || "");
-                      });
-                      activityLog = stripAnsi(stream.log || "");
-                    } else {
-                      if (liveStream) liveStream.close();
-                      liveStream = null;
-                      void loadActivityLog(activity.id);
-                    }
-                  }}
+                  onclick={() => void openActivity(activity.id)}
                 >
-                  <span>{activity.summary}</span>
-                  <small
-                    >{activity.status} · {formatDateTime(
-                      activity.created_at,
-                    )}</small
-                  >
+                  <div class="activity-row">
+                    <span class="activity-summary">{activity.summary}</span>
+                    <small class="activity-meta">
+                      {activity.status} · Trigger: {activity.trigger} · Source: {activity.source}{activity.triggered_by
+                        ? ` (${activity.triggered_by})`
+                        : ""}
+                    </small>
+                    <small class="activity-meta">
+                      Started: {activity.started_at
+                        ? formatDateTime(activity.started_at)
+                        : "queued"}
+                      · Duration: {formatActivityDuration(activity)}
+                    </small>
+                    <small class="activity-meta">
+                      Commits: {activity.commit_before
+                        ? activity.commit_before.slice(0, 7)
+                        : "—"} → {activity.commit_after
+                        ? activity.commit_after.slice(0, 7)
+                        : "—"}
+                    </small>
+                  </div>
                 </button>
               </li>
             {/each}
@@ -443,7 +506,7 @@
             </div>
           {/if}
         </div>
-        <div class="log-shell">
+        <div class="log-shell" bind:this={logViewport}>
           {#if activityLoading}
             <p>Loading output…</p>
           {:else}
@@ -624,8 +687,31 @@
     color: var(--rw-on-surface-muted);
   }
 
+  .activity-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    gap: 0.2rem;
+    text-align: left;
+  }
+
+  .activity-summary {
+    font-weight: 600;
+  }
+
+  .activity-meta {
+    opacity: 0.8;
+  }
+
+  .live-view-row {
+    margin-bottom: 0.75rem;
+  }
+
   .log-shell {
     min-height: 18rem;
+    max-height: 36rem;
+    overflow-y: auto;
   }
 
   .delete-dialog {
