@@ -1,26 +1,49 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invalidateAll } from "$app/navigation";
+  import { page } from "$app/state";
   import { resolve } from "$app/paths";
   import { repositories, repositoryStatusTone } from "#lib/repositories.svelte";
   import {
     Button,
     Dropdown,
     Heading,
+    Input,
     Separator,
     StatusDot,
     ThemeToggle,
     ToastContainer,
     toast,
   } from "@runwisp/ui";
-  import { ApiError, logout } from "#lib/api/client";
+  import { ApiError, logout, syncAll } from "#lib/api/client";
   import { events } from "#lib/events.svelte";
   import type { LayoutProps } from "./$types";
   import "../app.css";
 
   let { data, children }: LayoutProps = $props();
   let sidebarOpen = $state(false);
+  let sidebarFilter = $state("");
   let connectionState = $derived(events.connectionState);
+
+  let filteredRepositories = $derived(
+    repositories.repositories.filter((repo) => {
+      const query = sidebarFilter.trim().toLowerCase();
+      if (!query) return true;
+      return `${repo.name} ${repo.url}`.toLowerCase().includes(query);
+    }),
+  );
+
+  $effect(() => {
+    try {
+      const pathname = page?.url?.pathname ?? (typeof window !== "undefined" ? window.location.pathname : "/");
+      const match = /^\/repositories\/([^/]+)(?:\/edit)?$/.exec(pathname);
+      repositories.select(match ? match[1] : null);
+    } catch {
+      const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
+      const match = /^\/repositories\/([^/]+)(?:\/edit)?$/.exec(pathname);
+      repositories.select(match ? match[1] : null);
+    }
+  });
 
   onMount(() => {
     void repositories.refresh();
@@ -35,6 +58,24 @@
     } catch (error) {
       toast.error(
         error instanceof ApiError ? error.message : "Unable to log out.",
+      );
+    }
+  }
+
+  async function handleSyncAll(): Promise<void> {
+    try {
+      const result = await syncAll();
+      const started = result.started.length;
+      const skipped = result.skipped.length;
+      toast.success(
+        started > 0 || skipped > 0
+          ? `Sync started for ${started} repository${started === 1 ? "" : "s"}${skipped > 0 ? `; ${skipped} skipped` : ""}.`
+          : "No repositories were eligible to sync.",
+      );
+      await repositories.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to run a sync.",
       );
     }
   }
@@ -111,8 +152,26 @@
         class="sidebar"
         aria-label="Repository navigation"
       >
-        <div class="sidebar-heading">
-          <Heading level={2} size="xs">Repositories</Heading>
+        <div class="sidebar-top">
+          <a href={resolve("/")} class="dashboard-link">Dashboard</a>
+        </div>
+        <div class="sidebar-actions">
+          <Input
+            bind:value={sidebarFilter}
+            type="search"
+            placeholder="Filter repositories"
+            aria-label="Filter repositories in the sidebar"
+          />
+          <div class="sidebar-buttons">
+            <Button variant="secondary" onclick={() => void handleSyncAll()}
+              >Sync all</Button
+            >
+            <Button
+              onclick={() =>
+                (window.location.href = resolve("/repositories/new"))}
+              >Add repository</Button
+            >
+          </div>
         </div>
         <div
           class="repository-list-slot"
@@ -123,15 +182,15 @@
             <p class="slot-empty">Loading repositories…</p>
           {:else if repositories.error}
             <p class="slot-empty error">{repositories.error}</p>
-          {:else if repositories.repositories.length === 0}
+          {:else if filteredRepositories.length === 0}
             <span class="slot-rail" aria-hidden="true"></span>
             <div class="slot-copy">
-              <p>No repositories yet.</p>
+              <p>No repositories match.</p>
               <a href={resolve("/repositories/new")}>Add repository</a>
             </div>
           {:else}
             <nav class="repo-nav" aria-label="Repository list">
-              {#each repositories.repositories as repo (repo.id)}
+              {#each filteredRepositories as repo (repo.id)}
                 <a
                   href={resolve("/repositories/[id]", { id: repo.id })}
                   class:active={repositories.selectedId === repo.id}
@@ -240,7 +299,7 @@
   .workspace {
     display: grid;
     min-height: calc(100dvh - 4.25rem);
-    grid-template-columns: 15rem minmax(0, 1fr);
+    grid-template-columns: 17rem minmax(0, 1fr);
   }
 
   .sidebar {
@@ -249,231 +308,161 @@
     flex-direction: column;
     border-right: 1px solid var(--rw-outline);
     background: var(--rw-surface-raised);
-    padding: 1.5rem 1rem 1rem;
+    padding: 1rem 0.85rem 0.8rem;
   }
 
-  .sidebar-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 0.5rem 1rem;
+  .sidebar-top {
+    padding: 0.25rem 0.5rem 0.75rem;
   }
 
-  .repository-list-slot {
-    position: relative;
-    display: flex;
-    min-height: 5rem;
-    align-items: flex-start;
+  .dashboard-link {
+    display: inline-flex;
+    width: fit-content;
+    color: var(--rw-primary);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .sidebar-actions {
+    display: grid;
     gap: 0.75rem;
-    border: 1px dashed var(--rw-outline-hover);
-    border-radius: 0.25rem;
-    padding: 0.85rem 0.75rem;
+    padding: 0 0.25rem 0.9rem;
   }
 
-  .slot-rail {
-    width: 0.42rem;
-    height: 0.42rem;
-    flex: 0 0 auto;
-    margin-top: 0.35rem;
-    border: 1px solid var(--rw-on-surface-faint);
-    border-radius: 50%;
-  }
-
-  .repository-list-slot p {
-    margin: 0;
-    color: var(--rw-on-surface-faint);
-    font-size: 0.75rem;
-    line-height: 1.5;
-  }
-
-  .slot-copy,
-  .repo-nav {
+  .sidebar-buttons {
     display: flex;
-    width: 100%;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 0.5rem;
   }
 
-  .slot-empty {
+  .repository-list-slot {
+    display: flex;
+    min-height: 12rem;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0 0.1rem;
+  }
+
+  .slot-empty,
+  .slot-copy {
+    color: var(--rw-on-surface-muted);
+  }
+
+  .slot-copy {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.75rem 0.5rem;
+    border: 1px dashed var(--rw-outline);
+    border-radius: 0.75rem;
+    background: var(--rw-surface);
+  }
+
+  .slot-copy p {
     margin: 0;
-    color: var(--rw-on-surface-faint);
   }
 
   .slot-copy a {
     color: var(--rw-primary);
+    font-weight: 600;
     text-decoration: none;
+  }
+
+  .repo-nav {
+    display: grid;
+    gap: 0.35rem;
   }
 
   .repo-link {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.55rem 0.6rem;
+    gap: 0.7rem;
     border: 1px solid transparent;
-    border-radius: 0.55rem;
+    border-radius: 0.65rem;
+    padding: 0.7rem 0.65rem;
     color: var(--rw-on-surface);
     text-decoration: none;
+    transition:
+      border-color 0.18s ease,
+      background 0.18s ease;
+  }
+
+  .repo-link:hover {
+    border-color: var(--rw-outline);
+    background: var(--rw-surface);
   }
 
   .repo-link.active {
+    border-color: var(--rw-primary);
     background: var(--rw-primary-soft);
-    border-color: var(--rw-primary-soft-border);
   }
 
   .repo-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .sidebar-footer {
+    display: grid;
+    gap: 0.4rem;
+    margin-top: 1rem;
+    color: var(--rw-on-surface-muted);
+    font-size: 0.8rem;
+  }
+
+  .sidebar-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--rw-on-surface);
+  }
+
+  .mobile-backdrop {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    background: rgba(17, 24, 39, 0.28);
+  }
+
+  .mobile-menu-button {
+    display: none;
+    border: 1px solid var(--rw-outline);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--rw-on-surface);
+    font-size: 1.25rem;
   }
 
   .error {
     color: var(--rw-danger-text);
   }
 
-  .sidebar-footer {
-    display: grid;
-    gap: 0.75rem;
-    margin-top: auto;
-    padding: 1rem 0.5rem 0.25rem;
-    color: var(--rw-on-surface-faint);
-    font-size: 0.7rem;
-  }
-
-  .sidebar-status {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--rw-on-surface-muted);
-  }
-
-  .main-content {
-    min-width: 0;
-    padding: clamp(1.5rem, 4vw, 3.5rem);
-  }
-
-  .connection-banner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.65rem;
-    border-bottom: 1px solid var(--rw-warning-soft-border);
-    background: var(--rw-warning-soft);
-    padding: 0.55rem 1rem;
-    color: var(--rw-warning-soft-text);
-    font-size: 0.8rem;
-  }
-
-  .bootstrap-error {
-    display: flex;
-    min-height: 100dvh;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 1rem;
-    max-width: 35rem;
-    margin: 0 auto;
-    padding: 2rem;
-  }
-
-  .bootstrap-error p {
-    margin: 0 0 0.5rem;
-    color: var(--rw-on-surface-muted);
-  }
-
-  .error-mark {
-    display: grid;
-    width: 2.3rem;
-    height: 2.3rem;
-    place-items: center;
-    border: 1px solid var(--rw-danger-soft-border);
-    border-radius: 50%;
-    color: var(--rw-danger-soft-text);
-    font-family: var(--rw-font-mono);
-  }
-
-  .mobile-menu-button,
-  .mobile-backdrop {
-    display: none;
-  }
-
   @media (max-width: 767px) {
-    .topbar {
-      height: 3.75rem;
-      padding: 0 0.8rem;
-    }
-
-    .topbar-brand {
-      gap: 0.65rem;
-    }
-
-    .brand-section,
-    .brand-divider,
-    .user-email {
-      display: none;
-    }
-
-    .topbar-controls {
-      gap: 0.25rem;
-    }
-
     .workspace {
-      min-height: calc(100dvh - 3.75rem);
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: 1fr;
     }
 
     .mobile-menu-button {
-      display: grid;
-      width: 2rem;
-      height: 2rem;
-      place-items: center;
-      border: 0;
-      border-radius: 0.2rem;
-      background: transparent;
-      color: var(--rw-on-surface-muted);
-      cursor: pointer;
-      font-size: 1rem;
-    }
-
-    .mobile-menu-button:hover {
-      background: var(--rw-surface-sunken);
-      color: var(--rw-on-surface);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.25rem;
+      height: 2.25rem;
     }
 
     .sidebar {
       position: fixed;
-      z-index: 12;
-      top: 3.75rem;
-      bottom: 0;
-      left: 0;
-      width: min(18rem, calc(100vw - 3rem));
-      border-right: 1px solid var(--rw-outline);
-      box-shadow: var(--rw-shadow-md);
-      transform: translateX(-105%);
-      transition: transform 160ms ease-out;
+      inset: 4.25rem auto 0 0;
+      width: min(18rem, 85vw);
+      transform: translateX(-120%);
+      transition: transform 0.2s ease;
+      z-index: 10;
     }
 
     .sidebar.drawer-open {
       transform: translateX(0);
-    }
-
-    .mobile-backdrop {
-      position: fixed;
-      z-index: 11;
-      inset: 3.75rem 0 0;
-      display: block;
-      border: 0;
-      background: var(--rw-backdrop);
-      backdrop-filter: blur(2px);
-    }
-
-    .main-content {
-      padding: 1.5rem 1rem;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .sidebar {
-      transition: none;
     }
   }
 </style>

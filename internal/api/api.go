@@ -72,6 +72,7 @@ type Repository struct {
 	PostCommandTimeoutSeconds int             `json:"post_command_timeout_seconds"`
 	HardReset                 bool            `json:"hard_reset"`
 	HasAccessToken            bool            `json:"has_access_token"`
+	WebhookSecret             string          `json:"webhook_secret"`
 	WebhookURL                string          `json:"webhook_url"`
 	CreatedAt                 time.Time       `json:"created_at"`
 	UpdatedAt                 time.Time       `json:"updated_at"`
@@ -210,6 +211,7 @@ func (s *Service) ListRepositories(w http.ResponseWriter, r *http.Request) {
 			PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds,
 			HardReset:                 repo.HardReset,
 			HasAccessToken:            repo.AccessToken != "",
+			WebhookSecret:             repo.WebhookSecret,
 			WebhookURL:                strings.TrimRight(s.cfg.Server.BaseURL, "/") + "/hooks/" + repo.ID,
 			CreatedAt:                 repo.CreatedAt,
 			UpdatedAt:                 repo.UpdatedAt,
@@ -241,7 +243,7 @@ func (s *Service) GetRepository(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "internal", "failed to load repository")
 		return
 	}
-	view := Repository{ID: repo.ID, Name: repo.Name, URL: repo.URL, Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookURL: strings.TrimRight(s.cfg.Server.BaseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
+	view := Repository{ID: repo.ID, Name: repo.Name, URL: repo.URL, Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookSecret: repo.WebhookSecret, WebhookURL: strings.TrimRight(s.cfg.Server.BaseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
 	respond.JSON(w, http.StatusOK, view)
 }
 
@@ -923,7 +925,7 @@ func ensureGitDir(path string) error {
 }
 
 func repositoryOut(repo model.Repository, baseURL string) Repository {
-	return Repository{ID: repo.ID, Name: repo.Name, URL: repo.URL, Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookURL: strings.TrimRight(baseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
+	return Repository{ID: repo.ID, Name: repo.Name, URL: repo.URL, Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookSecret: repo.WebhookSecret, WebhookURL: strings.TrimRight(baseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
 }
 
 func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, kind string, data any) error {

@@ -97,6 +97,14 @@ func TestApplyRepositoryUpdatePreservesOmittedValues(t *testing.T) {
 	}
 }
 
+func TestRepositoryOutputIncludesWebhookSecret(t *testing.T) {
+	repo := model.Repository{ID: "11111111-1111-4111-8111-111111111111", Name: "alpha", WebhookSecret: "super-secret"}
+	out := repositoryOut(repo, "https://example.com")
+	if out.WebhookSecret != "super-secret" {
+		t.Fatalf("secret omitted from repository payload: got %q want %q", out.WebhookSecret, "super-secret")
+	}
+}
+
 func TestFinishedActivityStreamSkipsSnapshotOnResume(t *testing.T) {
 	logs, err := logstore.New(t.TempDir())
 	if err != nil {

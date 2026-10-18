@@ -7,21 +7,29 @@
     Heading,
     Separator,
     StatusDot,
+    toast,
   } from "@runwisp/ui";
   import { page } from "$app/state";
   import {
+    ApiError,
     deleteRepository,
     getActivityLog,
     getRepository,
     listActivities,
     syncRepository,
   } from "#lib/api/client";
+  import { events } from "#lib/events.svelte";
+  import { createLogStream } from "#lib/log-stream.svelte";
   import { repositoryStatusTone } from "#lib/repositories.svelte";
   import { formatDateTime, stripAnsi } from "#lib/utils";
   import type { ActivitySummary, Repository } from "#lib/api/types";
 
+  const ACTIVITY_LIMIT = 20;
+
   let repository = $state<Repository | null>(null);
   let activities = $state<ActivitySummary[]>([]);
+  let activityCursor = $state<string | null>(null);
+  let hasMore = $state(false);
   let loading = $state(true);
   let loadError = $state<string | null>(null);
   let deleteOpen = $state(false);
@@ -30,28 +38,18 @@
   let selectedActivityId = $state<string | null>(null);
   let activityLog = $state("");
   let activityLoading = $state(false);
+  let autoScroll = $state(true);
+  let liveStream = $state<ReturnType<typeof createLogStream> | null>(null);
 
-  async function loadRepository(): Promise<void> {
-    const id = page.params.id;
-    if (!id) return;
-    loading = true;
-    loadError = null;
-    try {
-      const [repo, list] = await Promise.all([
-        getRepository(id),
-        listActivities(id),
-      ]);
-      repository = repo;
-      activities = list;
-      if (list.length > 0 && !selectedActivityId) {
-        selectedActivityId = list[0].id;
-      }
-    } catch (error) {
-      loadError =
-        error instanceof Error ? error.message : "Unable to load repository.";
-    } finally {
-      loading = false;
+  function updateActivityQuery(id: string | null): void {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (id) {
+      url.searchParams.set("activity", id);
+    } else {
+      url.searchParams.delete("activity");
     }
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
   }
 
   async function loadActivityLog(activityId: string): Promise<void> {
@@ -67,13 +65,134 @@
     }
   }
 
+  async function loadActivities(reset = true): Promise<void> {
+    const id = page.params.id;
+    if (!id) return;
+    if (reset) {
+      activityCursor = null;
+    }
+    activityLoading = true;
+    try {
+      const list = await listActivities(id, {
+        limit: ACTIVITY_LIMIT,
+        before: activityCursor ?? undefined,
+      });
+      if (reset) {
+        activities = list;
+      } else {
+        activities = [...activities, ...list];
+      }
+      hasMore = list.length >= ACTIVITY_LIMIT;
+      if (list.length > 0) {
+        activityCursor = list[list.length - 1].created_at;
+      }
+      const currentQuery = page.url.searchParams.get("activity");
+      if (
+        currentQuery &&
+        !activities.some((entry) => entry.id === currentQuery)
+      ) {
+        selectedActivityId = currentQuery;
+      }
+      if (!selectedActivityId && list.length > 0) {
+        const preferred =
+          list.find(
+            (entry) => entry.status === "running" || entry.status === "queued",
+          ) ?? list[0];
+        selectedActivityId = preferred.id;
+        updateActivityQuery(selectedActivityId);
+      }
+      if (selectedActivityId) {
+        const active = activities.find(
+          (entry) => entry.id === selectedActivityId,
+        );
+        if (
+          active &&
+          (active.status === "running" || active.status === "queued")
+        ) {
+          if (liveStream) {
+            liveStream.close();
+          }
+          const stream = createLogStream(active.id);
+          liveStream = stream;
+          stream.subscribe(() => {
+            activityLog = stripAnsi(stream.log || "");
+          });
+          activityLog = stripAnsi(stream.log || "");
+        } else {
+          if (liveStream) {
+            liveStream.close();
+            liveStream = null;
+          }
+          await loadActivityLog(selectedActivityId);
+        }
+      }
+    } catch (error) {
+      loadError =
+        error instanceof Error
+          ? error.message
+          : "Unable to load activity history.";
+    } finally {
+      activityLoading = false;
+    }
+  }
+
+  async function loadRepository(): Promise<void> {
+    const id = page.params.id;
+    if (!id) return;
+    loading = true;
+    loadError = null;
+    try {
+      const repo = await getRepository(id);
+      repository = repo;
+      if (!selectedActivityId) {
+        const fromQuery = page.url.searchParams.get("activity");
+        if (fromQuery) {
+          selectedActivityId = fromQuery;
+        }
+      }
+      await loadActivities(true);
+    } catch (error) {
+      loadError =
+        error instanceof Error ? error.message : "Unable to load repository.";
+    } finally {
+      loading = false;
+    }
+  }
+
+  function handleActivityEvent(event: unknown): void {
+    const payload = (event as { activity?: ActivitySummary })?.activity;
+    if (!payload || !repository || payload.repository_id !== repository.id)
+      return;
+    void loadActivities(true);
+  }
+
   $effect(() => {
-    if (!page.params.id) return;
+    const id = page.params.id;
+    if (!id) return;
     void loadRepository();
   });
 
   $effect(() => {
     if (!selectedActivityId) return;
+    updateActivityQuery(selectedActivityId);
+    const picked = activities.find((entry) => entry.id === selectedActivityId);
+    if (!picked) return;
+    if (picked.status === "queued" || picked.status === "running") {
+      if (liveStream) {
+        liveStream.close();
+      }
+      const stream = createLogStream(picked.id);
+      liveStream = stream;
+      stream.subscribe(() => {
+        activityLog = stripAnsi(stream.log || "");
+      });
+      activityLog = stripAnsi(stream.log || "");
+      return;
+    }
+    if (liveStream) {
+      liveStream.close();
+      liveStream = null;
+    }
     void loadActivityLog(selectedActivityId);
   });
 
@@ -83,11 +202,15 @@
       await syncRepository(repository.id);
       await loadRepository();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to start sync.";
-      if (!message.includes("already")) {
-        throw error;
+      if (error instanceof ApiError && error.status === 409) {
+        toast.error(
+          error.message || "Repository is busy and cannot be synced right now.",
+        );
+        return;
       }
+      toast.error(
+        error instanceof Error ? error.message : "Unable to start sync.",
+      );
     }
   }
 
@@ -103,8 +226,34 @@
     }
   }
 
+  async function handleCopyLog(): Promise<void> {
+    if (!activityLog) return;
+    await navigator.clipboard.writeText(activityLog);
+    toast.success("Activity log copied.");
+  }
+
+  function handleDownloadLog(): void {
+    const id = selectedActivityId ?? repository?.id;
+    if (!id) return;
+    const link = document.createElement("a");
+    link.href = `/api/activities/${encodeURIComponent(id)}/log?download=1`;
+    link.download = `${repository?.name ?? "activity"}.log`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   onMount(() => {
-    void loadRepository();
+    const cleanup = [
+      events.subscribe("activity.queued", handleActivityEvent),
+      events.subscribe("activity.started", handleActivityEvent),
+      events.subscribe("activity.finished", handleActivityEvent),
+      events.subscribe("repository.updated", () => void loadRepository()),
+    ];
+    return () => {
+      cleanup.forEach((fn) => fn());
+      if (liveStream) liveStream.close();
+    };
   });
 </script>
 
@@ -121,9 +270,8 @@
     <header class="repo-header">
       <div>
         <div class="status-row">
-          <StatusDot tone={repositoryStatusTone(repository)} /><span
-            >{repository.last_activity?.status ?? "never"}</span
-          >
+          <StatusDot tone={repositoryStatusTone(repository)} />
+          <span>{repository.last_activity?.status ?? "never"}</span>
         </div>
         <Heading level={1} size="lg">{repository.name}</Heading>
       </div>
@@ -133,15 +281,19 @@
           onclick={() => {
             if (repository)
               window.location.href = "/repositories/" + repository.id + "/edit";
-          }}>Edit</Button
+          }}
         >
+          Edit
+        </Button>
         <Button variant="danger" onclick={() => (deleteOpen = true)}
           >Delete</Button
         >
         <Button
           onclick={() => void handleSyncNow()}
-          disabled={Boolean(repository?.running_activity_id)}>Sync now</Button
+          disabled={Boolean(repository?.running_activity_id)}
         >
+          Sync now
+        </Button>
       </div>
     </header>
 
@@ -193,6 +345,21 @@
         <p class="muted">
           Secret: {repository.webhook_secret ? "Set" : "Use global"}
         </p>
+        {#if repository.webhook_secret}
+          <div class="secret-actions-row">
+            <Button
+              type="button"
+              variant="secondary"
+              onclick={() => {
+                if (repository) {
+                  void navigator.clipboard.writeText(
+                    repository.webhook_secret ?? "",
+                  );
+                }
+              }}>Copy secret</Button
+            >
+          </div>
+        {/if}
       </div>
     </div>
 
@@ -200,7 +367,16 @@
 
     <div class="activity-layout">
       <div class="activities-panel">
-        <h2>Activity</h2>
+        <div class="panel-header">
+          <h2>Activity</h2>
+          {#if hasMore}
+            <Button
+              type="button"
+              variant="secondary"
+              onclick={() => void loadActivities(false)}>Load more</Button
+            >
+          {/if}
+        </div>
         {#if activities.length === 0}
           <p class="empty-state">No activity yet.</p>
         {:else}
@@ -210,7 +386,26 @@
                 <button
                   type="button"
                   class:selected={selectedActivityId === activity.id}
-                  onclick={() => (selectedActivityId = activity.id)}
+                  onclick={() => {
+                    selectedActivityId = activity.id;
+                    updateActivityQuery(activity.id);
+                    if (
+                      activity.status === "running" ||
+                      activity.status === "queued"
+                    ) {
+                      if (liveStream) liveStream.close();
+                      const stream = createLogStream(activity.id);
+                      liveStream = stream;
+                      stream.subscribe(() => {
+                        activityLog = stripAnsi(stream.log || "");
+                      });
+                      activityLog = stripAnsi(stream.log || "");
+                    } else {
+                      if (liveStream) liveStream.close();
+                      liveStream = null;
+                      void loadActivityLog(activity.id);
+                    }
+                  }}
                 >
                   <span>{activity.summary}</span>
                   <small
@@ -226,7 +421,28 @@
       </div>
 
       <div class="log-panel">
-        <h2>Output</h2>
+        <div class="panel-header">
+          <h2>Output</h2>
+          {#if selectedActivityId}
+            <div class="inline-actions">
+              <Button type="button" variant="secondary" onclick={handleCopyLog}
+                >Copy</Button
+              >
+              <Button
+                type="button"
+                variant="secondary"
+                onclick={handleDownloadLog}>Download</Button
+              >
+              <Button
+                type="button"
+                variant="secondary"
+                onclick={() => (autoScroll = !autoScroll)}
+              >
+                {autoScroll ? "Auto-scroll on" : "Auto-scroll off"}
+              </Button>
+            </div>
+          {/if}
+        </div>
         <div class="log-shell">
           {#if activityLoading}
             <p>Loading output…</p>
@@ -254,10 +470,10 @@
   onConfirm={() => void handleDelete()}
 >
   <div class="delete-dialog">
-    <label
-      ><input type="checkbox" bind:checked={deleteFiles} /> Also delete files on
-      disk ({repository?.path ?? "/repos"})</label
-    >
+    <label>
+      <input type="checkbox" bind:checked={deleteFiles} />
+      Also delete files on disk ({repository?.path ?? "/repos"})
+    </label>
     {#if deleteError}<p class="error">{deleteError}</p>{/if}
   </div>
 </AlertDialog>
@@ -268,74 +484,92 @@
     margin: 0 auto;
     padding: 2rem 0 3rem;
   }
+
   .repo-header,
   .header-actions,
-  .status-row {
+  .status-row,
+  .panel-header,
+  .inline-actions,
+  .secret-actions-row {
     display: flex;
     align-items: center;
   }
+
   .repo-header {
     justify-content: space-between;
     gap: 1rem;
     margin-bottom: 1.5rem;
   }
+
   .status-row {
     gap: 0.5rem;
     margin-bottom: 0.5rem;
     text-transform: capitalize;
   }
+
   .header-actions {
     gap: 0.75rem;
     flex-wrap: wrap;
   }
+
   .meta-grid {
     display: grid;
     grid-template-columns: 1.4fr 1fr;
     gap: 1rem;
     margin-bottom: 1.5rem;
   }
+
   .info-panel {
     border: 1px solid var(--rw-outline);
     border-radius: 0.8rem;
     background: var(--rw-surface-raised);
     padding: 1rem 1.1rem;
   }
+
   .info-panel h2,
   .activities-panel h2,
   .log-panel h2 {
     margin: 0 0 1rem;
   }
+
   dl {
     display: grid;
     gap: 0.7rem;
     margin: 0;
   }
+
   dl div {
     display: grid;
     grid-template-columns: 8rem minmax(0, 1fr);
     gap: 0.75rem;
   }
+
   dt {
     color: var(--rw-on-surface-muted);
     font-weight: 600;
   }
+
   dd {
     margin: 0;
     font-family: var(--rw-font-mono);
     word-break: break-word;
   }
+
   .mono {
     font-family: var(--rw-font-mono);
   }
+
   .muted {
     color: var(--rw-on-surface-muted);
   }
+
   .activity-layout {
     display: grid;
     grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
     gap: 1rem;
     margin-top: 1.25rem;
   }
+
   .activities-panel,
   .log-panel {
     border: 1px solid var(--rw-outline);
@@ -343,6 +577,22 @@
     background: var(--rw-surface-raised);
     padding: 1rem 1.1rem;
   }
+
+  .panel-header {
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .inline-actions {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .secret-actions-row {
+    margin-top: 0.8rem;
+  }
+
   .activity-list {
     display: grid;
     gap: 0.75rem;
@@ -350,6 +600,7 @@
     padding: 0;
     margin: 0;
   }
+
   .activity-list button {
     width: 100%;
     display: flex;
@@ -363,40 +614,50 @@
     color: var(--rw-on-surface);
     cursor: pointer;
   }
+
   .activity-list button.selected {
     border-color: var(--rw-primary);
     background: var(--rw-primary-soft);
   }
+
   .activity-list small {
     color: var(--rw-on-surface-muted);
   }
+
   .log-shell {
     min-height: 18rem;
   }
+
   .delete-dialog {
     display: grid;
     gap: 0.7rem;
   }
+
   .delete-dialog label {
     display: flex;
     align-items: center;
     gap: 0.65rem;
   }
+
   .error {
     color: var(--rw-danger-text);
   }
+
   .empty-state {
     color: var(--rw-on-surface-muted);
     padding: 1rem 0;
   }
+
   .empty-state.error {
     color: var(--rw-danger-text);
   }
+
   @media (max-width: 767px) {
     .meta-grid,
     .activity-layout {
       grid-template-columns: 1fr;
     }
+
     .repo-header {
       flex-direction: column;
       align-items: flex-start;

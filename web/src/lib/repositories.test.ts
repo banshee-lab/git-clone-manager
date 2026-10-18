@@ -20,7 +20,7 @@ describe("repository form helpers", () => {
 
     expect(errors.name).toBe("Repository name is required.");
     expect(errors.url).toBe(
-      "Repository URL must begin with http:// or https://.",
+      "Repository URL must be a valid http or https URL.",
     );
     expect(errors.path).toBe("Clone path must be an absolute filesystem path.");
     expect(errors.access_username).toBe("Access username is required.");

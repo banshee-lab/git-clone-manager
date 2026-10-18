@@ -3,6 +3,23 @@ import type { RepositoryInput } from "./api/types";
 export type TokenMode = "keep" | "replace" | "clear";
 export type SecretMode = "keep" | "replace" | "clear";
 
+export function normalizeFilesystemPath(value: string): string {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return "";
+  const absolute = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  const segments: string[] = [];
+  for (const segment of absolute.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length > 0) segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  const normalized = `/${segments.join("/")}`;
+  return normalized === "" ? "/" : normalized;
+}
+
 export function suggestClonePath(name: string, reposRoot = "/repos"): string {
   const slug = (name ?? "")
     .trim()
@@ -11,6 +28,19 @@ export function suggestClonePath(name: string, reposRoot = "/repos"): string {
     .replace(/^-+|-+$/g, "");
   const base = (reposRoot ?? "/repos").replace(/\/+$/, "") || "/repos";
   return `${base}/${slug || "repository"}`;
+}
+
+export function generateWebhookSecret(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 export function validateRepositoryForm(
@@ -29,22 +59,66 @@ export function validateRepositoryForm(
   const path = (input.path ?? "").trim();
   const accessUsername = (input.access_username ?? "").trim();
 
-  if (!name) errors.name = "Repository name is required.";
-  if (!url) errors.url = "Repository URL is required.";
-  else if (!/^https?:\/\//i.test(url))
-    errors.url = "Repository URL must begin with http:// or https://.";
-  if (!path) errors.path = "Clone path is required.";
-  else if (!path.startsWith("/"))
-    errors.path = "Clone path must be an absolute filesystem path.";
-  if (!accessUsername) errors.access_username = "Access username is required.";
+  if (!name) {
+    errors.name = "Repository name is required.";
+  } else if (name.length > 100) {
+    errors.name = "Repository name must be 1-100 characters.";
+  }
+
+  if (!url) {
+    errors.url = "Repository URL is required.";
+  } else {
+    try {
+      const parsed = new URL(url);
+      if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname) {
+        errors.url = "Repository URL must be a valid http or https URL.";
+      }
+    } catch {
+      errors.url = "Repository URL must be a valid http or https URL.";
+    }
+  }
+
+  if (!branch) {
+    // branch is optional; empty value is acceptable and uses default logic
+  } else if (
+    /\s/.test(branch) ||
+    branch.includes("..") ||
+    branch.startsWith("-")
+  ) {
+    errors.branch = "Branch contains invalid characters.";
+  }
+
+  if (!path) {
+    errors.path = "Clone path is required.";
+  } else {
+    if (!path.startsWith("/")) {
+      errors.path = "Clone path must be an absolute filesystem path.";
+    } else if (path !== "/" && normalizeFilesystemPath(path) !== path) {
+      errors.path = "Clone path must be normalized and absolute.";
+    } else if (path === "/") {
+      errors.path = "Clone path must be an absolute clone path.";
+    }
+  }
+
+  if (!accessUsername) {
+    errors.access_username = "Access username is required.";
+  }
+
   if (
     input.post_command_timeout_seconds !== undefined &&
+    input.post_command_timeout_seconds !== null &&
     Number.isNaN(Number(input.post_command_timeout_seconds))
   ) {
     errors.post_command_timeout_seconds = "Timeout must be a number.";
   }
-  if (branch && branch.includes(" ")) {
-    errors.branch = "Branch names cannot contain spaces.";
+
+  if (
+    input.post_command_timeout_seconds !== undefined &&
+    input.post_command_timeout_seconds !== null &&
+    Number(input.post_command_timeout_seconds) < 0
+  ) {
+    errors.post_command_timeout_seconds =
+      "Timeout must be greater than or equal to zero.";
   }
 
   return errors;
