@@ -152,6 +152,44 @@ func TestShutdownTimeoutInterruptsRunningSync(t *testing.T) {
 	}
 }
 
+func TestShutdownTimeoutInterruptsQueuedWorkAndCanBeRepeated(t *testing.T) {
+	exec := &fakeExecutor{gate: make(chan struct{}), started: make(chan struct{}, 2)}
+	m, repos, acts, _, first := setupManager(t, 1, exec)
+	second := makeRepository(t, repos, "queued")
+	running, err := m.Submit(context.Background(), first.ID, TriggerInfo{Trigger: model.TriggerManual, Source: model.SourceManual})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-exec.started:
+	case <-time.After(time.Second):
+		t.Fatal("first executor did not start")
+	}
+	queued, err := m.Submit(context.Background(), second.ID, TriggerInfo{Trigger: model.TriggerManual, Source: model.SourceManual})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := m.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{running.ID, queued.ID} {
+		a, err := acts.Get(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Status != model.ActivityInterrupted {
+			t.Fatalf("activity %s status=%s", id, a.Status)
+		}
+	}
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
+	defer cancel2()
+	if err := m.Shutdown(ctx2); err != nil {
+		t.Fatalf("second shutdown: %v", err)
+	}
+}
+
 func TestSubmitAllSkipsBusyRepository(t *testing.T) {
 	exec := &fakeExecutor{gate: make(chan struct{})}
 	m, repos, _, _, repo := setupManager(t, 1, exec)
@@ -214,6 +252,18 @@ func waitActivity(t *testing.T, acts store.Activities, id string) model.Activity
 	a, _ := acts.Get(context.Background(), id)
 	t.Fatalf("activity did not finish: %+v", a)
 	return model.Activity{}
+}
+
+func waitNotBusy(t *testing.T, m *Manager, repoID string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !m.IsBusy(repoID) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("repository %s remained busy", repoID)
 }
 
 func TestSubmitPersistsRedactedOutputAndPublishesLifecycle(t *testing.T) {
@@ -516,6 +566,7 @@ func TestCleanupPrunesOldestRecordsAndLogsPerRepository(t *testing.T) {
 		}
 		ids = append(ids, a.ID)
 		waitActivity(t, acts, a.ID)
+		waitNotBusy(t, m, repo.ID)
 		if i >= 3 {
 			removed := ids[i-3]
 			if _, err := acts.Get(context.Background(), removed); !errors.Is(err, store.ErrNotFound) {
@@ -545,6 +596,7 @@ func TestCleanupErrorDoesNotFailSync(t *testing.T) {
 	if got := waitActivity(t, acts, a.ID); got.Status != model.ActivitySuccess {
 		t.Fatalf("cleanup error changed sync outcome: %+v", got)
 	}
+	waitNotBusy(t, m, repo.ID)
 	cleaner.mu.Lock()
 	calls := cleaner.calls
 	cleaner.mu.Unlock()
@@ -571,6 +623,7 @@ func TestNotifierCalledOnceForFailuresAndInterruptionsOnly(t *testing.T) {
 	if got := waitActivity(t, acts, failed.ID); got.Status != model.ActivityFailed {
 		t.Fatalf("expected failure: %+v", got)
 	}
+	waitNotBusy(t, m, repo.ID)
 	good := makeRepository(t, repos, "good")
 	success, err := m.Submit(context.Background(), good.ID, TriggerInfo{Trigger: model.TriggerManual, Source: model.SourceManual})
 	if err != nil {
@@ -579,6 +632,7 @@ func TestNotifierCalledOnceForFailuresAndInterruptionsOnly(t *testing.T) {
 	if got := waitActivity(t, acts, success.ID); got.Status != model.ActivitySuccess {
 		t.Fatalf("expected success: %+v", got)
 	}
+	waitNotBusy(t, m, good.ID)
 	statuses := notifier.snapshot()
 	if len(statuses) != 2 || statuses[0] != model.ActivityInterrupted || statuses[1] != model.ActivityFailed {
 		t.Fatalf("notification statuses=%v", statuses)

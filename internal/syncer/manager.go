@@ -391,18 +391,8 @@ func (m *Manager) interruptRemaining() error {
 	for {
 		select {
 		case a := <-m.jobs:
-			a.Status = model.ActivityInterrupted
-			a.Summary = "Interrupted by shutdown"
-			now := time.Now().UTC()
-			a.FinishedAt = &now
-			if err := m.logs.Append(a.RepositoryID, a.ID, "\n[gitsync] interrupted: server shutdown\n"); err != nil {
-				return err
-			}
-			if err := m.activities.Update(context.Background(), &a); err != nil {
-				return err
-			}
-			repo, _ := m.repos.Get(context.Background(), a.RepositoryID)
-			m.afterFinish(a, repo)
+			m.interruptQueued(a)
+			m.tasks.Done()
 		default:
 			return nil
 		}
