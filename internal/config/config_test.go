@@ -95,6 +95,10 @@ func TestValidationCollectsErrorsAndNamesKeys(t *testing.T) {
 		{"data directory", "", "GITSYNC_STORAGE_DATA_DIR", "relative", "storage.data_dir"},
 		{"repos directory", "", "GITSYNC_STORAGE_REPOS_ROOT", "relative", "storage.repos_root"},
 		{"duration", "", "GITSYNC_SYNC_GIT_TIMEOUT", "0s", "sync.git_timeout"},
+		{"shutdown duration", "", "GITSYNC_SERVER_SHUTDOWN_TIMEOUT", "0s", "server.shutdown_timeout"},
+		{"session duration", "", "GITSYNC_OIDC_SESSION_TTL", "0s", "oidc.session_ttl"},
+		{"post command duration", "", "GITSYNC_SYNC_POST_COMMAND_TIMEOUT", "0s", "sync.post_command_timeout"},
+		{"notification webhook duration", "", "GITSYNC_NOTIFICATIONS_WEBHOOK_TIMEOUT", "0s", "notifications.webhook.timeout"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -108,6 +112,37 @@ func TestValidationCollectsErrorsAndNamesKeys(t *testing.T) {
 			}
 		})
 	}
+	requiredFields := []struct{ env, key string }{
+		{"GITSYNC_SERVER_BASE_URL", "server.base_url"},
+		{"GITSYNC_OIDC_ISSUER_URL", "oidc.issuer_url"},
+		{"GITSYNC_OIDC_CLIENT_ID", "oidc.client_id"},
+		{"GITSYNC_OIDC_CLIENT_SECRET", "oidc.client_secret"},
+		{"GITSYNC_OIDC_SESSION_SECRET", "oidc.session_secret"},
+	}
+	for _, field := range requiredFields {
+		t.Run("missing "+field.key, func(t *testing.T) {
+			requiredEnv(t)
+			t.Setenv(field.env, "")
+			_, err := Load(filepath.Join(t.TempDir(), "absent.yaml"))
+			if err == nil || !strings.Contains(err.Error(), field.key) {
+				t.Fatalf("error %v does not name missing key %q", err, field.key)
+			}
+		})
+	}
+	t.Run("all required fields missing are reported", func(t *testing.T) {
+		for _, field := range requiredFields {
+			t.Setenv(field.env, "")
+		}
+		_, err := Load(filepath.Join(t.TempDir(), "absent.yaml"))
+		if err == nil {
+			t.Fatal("expected missing required field errors")
+		}
+		for _, field := range requiredFields {
+			if !strings.Contains(err.Error(), field.key) {
+				t.Errorf("aggregate error %v does not name %q", err, field.key)
+			}
+		}
+	})
 	t.Setenv("GITSYNC_SERVER_BASE_URL", "bad")
 	t.Setenv("GITSYNC_OIDC_ISSUER_URL", "bad")
 	t.Setenv("GITSYNC_SYNC_MAX_CONCURRENT", "0")
