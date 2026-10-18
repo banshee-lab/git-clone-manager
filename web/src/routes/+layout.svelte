@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
+  import { repositories, repositoryStatusTone } from "#lib/repositories.svelte";
   import {
     Button,
     Dropdown,
@@ -22,6 +23,7 @@
   let connectionState = $derived(events.connectionState);
 
   onMount(() => {
+    void repositories.refresh();
     if (import.meta.env.VITE_MOCK_API !== "true") events.connect();
     return () => events.close();
   });
@@ -117,8 +119,30 @@
           data-testid="repository-list-slot"
           aria-label="Repository list slot"
         >
-          <span class="slot-rail" aria-hidden="true"></span>
-          <p>Repository list will appear here.</p>
+          {#if repositories.loading}
+            <p class="slot-empty">Loading repositories…</p>
+          {:else if repositories.error}
+            <p class="slot-empty error">{repositories.error}</p>
+          {:else if repositories.repositories.length === 0}
+            <span class="slot-rail" aria-hidden="true"></span>
+            <div class="slot-copy">
+              <p>No repositories yet.</p>
+              <a href={resolve("/repositories/new")}>Add repository</a>
+            </div>
+          {:else}
+            <nav class="repo-nav" aria-label="Repository list">
+              {#each repositories.repositories as repo (repo.id)}
+                <a
+                  href={resolve("/repositories/[id]", { id: repo.id })}
+                  class:active={repositories.selectedId === repo.id}
+                  class="repo-link"
+                >
+                  <StatusDot tone={repositoryStatusTone(repo)} />
+                  <span class="repo-name">{repo.name}</span>
+                </a>
+              {/each}
+            </nav>
+          {/if}
         </div>
         <div class="sidebar-footer">
           <Separator />
@@ -260,6 +284,50 @@
     color: var(--rw-on-surface-faint);
     font-size: 0.75rem;
     line-height: 1.5;
+  }
+
+  .slot-copy,
+  .repo-nav {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .slot-empty {
+    margin: 0;
+    color: var(--rw-on-surface-faint);
+  }
+
+  .slot-copy a {
+    color: var(--rw-primary);
+    text-decoration: none;
+  }
+
+  .repo-link {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.6rem;
+    border: 1px solid transparent;
+    border-radius: 0.55rem;
+    color: var(--rw-on-surface);
+    text-decoration: none;
+  }
+
+  .repo-link.active {
+    background: var(--rw-primary-soft);
+    border-color: var(--rw-primary-soft-border);
+  }
+
+  .repo-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .error {
+    color: var(--rw-danger-text);
   }
 
   .sidebar-footer {
