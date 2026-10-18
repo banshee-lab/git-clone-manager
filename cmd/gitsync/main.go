@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"gitsync/internal/config"
+	"gitsync/internal/events"
 	"gitsync/internal/gitx"
 	"gitsync/internal/history"
 	"gitsync/internal/logstore"
 	"gitsync/internal/respond"
 	"gitsync/internal/store/bolt"
+	"gitsync/internal/syncer"
 	"gitsync/internal/webui"
 )
 
@@ -77,6 +79,25 @@ func run() error {
 	}
 	defer db.Close()
 	cleaner := history.New(db.Activities(), db.Repositories(), logs, cfg.History.MaxItems)
+	hub := events.NewHub()
+	executor, err := syncer.NewExecutor(cfg.Storage.DataDir, time.Duration(cfg.Sync.GitTimeout), time.Duration(cfg.Sync.PostCommandTimeout), cfg.Sync.EnvPassthrough)
+	if err != nil {
+		return err
+	}
+	manager, err := syncer.NewManager(db.Repositories(), db.Activities(), logs, executor, cleaner, nil, hub, cfg.Sync.MaxConcurrent)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Server.ShutdownTimeout))
+		defer cancel()
+		if err := manager.Shutdown(ctx); err != nil {
+			logger.Error("sync manager shutdown failed", "error", err)
+		}
+	}()
+	if err := manager.Recover(context.Background()); err != nil {
+		return fmt.Errorf("recover sync activities: %w", err)
+	}
 	if err := cleaner.Startup(context.Background()); err != nil {
 		return fmt.Errorf("startup history cleanup: %w", err)
 	}
