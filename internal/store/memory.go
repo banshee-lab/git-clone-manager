@@ -84,6 +84,9 @@ func (m *MemoryRepositories) Create(ctx context.Context, r *model.Repository) er
 	}
 	copy := *r
 	initRepo(&copy)
+	if err := ValidateUUIDv4ID(copy.ID); err != nil {
+		return err
+	}
 	if _, ok := m.repos[copy.ID]; ok {
 		return ErrConflict
 	}
@@ -98,6 +101,9 @@ func (m *MemoryRepositories) Create(ctx context.Context, r *model.Repository) er
 }
 func (m *MemoryRepositories) Get(ctx context.Context, id string) (*model.Repository, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ValidateUUIDv4ID(id); err != nil {
 		return nil, err
 	}
 	m.mu.RLock()
@@ -155,6 +161,9 @@ func (m *MemoryRepositories) Update(ctx context.Context, r *model.Repository) er
 	if r == nil {
 		return errors.New("nil repository")
 	}
+	if err := ValidateUUIDv4ID(r.ID); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.check(); err != nil {
@@ -179,6 +188,9 @@ func (m *MemoryRepositories) Update(ctx context.Context, r *model.Repository) er
 }
 func (m *MemoryRepositories) Delete(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ValidateUUIDv4ID(id); err != nil {
 		return err
 	}
 	m.mu.Lock()
@@ -206,6 +218,12 @@ func (m *MemoryActivities) Create(ctx context.Context, a *model.Activity) error 
 	}
 	copy := *a
 	initActivity(&copy)
+	if err := ValidateUUIDv4ID(copy.ID); err != nil {
+		return err
+	}
+	if err := ValidateUUIDv4ID(copy.RepositoryID); err != nil {
+		return err
+	}
 	if _, ok := m.activities[copy.ID]; ok {
 		return ErrConflict
 	}
@@ -215,6 +233,9 @@ func (m *MemoryActivities) Create(ctx context.Context, a *model.Activity) error 
 }
 func (m *MemoryActivities) getActivity(ctx context.Context, id string) (*model.Activity, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ValidateUUIDv4ID(id); err != nil {
 		return nil, err
 	}
 	m.mu.RLock()
@@ -248,6 +269,12 @@ func (m *MemoryActivities) Update(ctx context.Context, a *model.Activity) error 
 	}
 	if a == nil {
 		return errors.New("nil activity")
+	}
+	if err := ValidateUUIDv4ID(a.ID); err != nil {
+		return err
+	}
+	if err := ValidateUUIDv4ID(a.RepositoryID); err != nil {
+		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -310,6 +337,9 @@ func (m *Memory) activityList(ctx context.Context, pred func(model.Activity) boo
 	return out, nil
 }
 func (m *MemoryActivities) ListByRepository(ctx context.Context, id string, limit int, before *time.Time) ([]model.Activity, error) {
+	if err := ValidateUUIDv4ID(id); err != nil {
+		return nil, err
+	}
 	return m.activityList(ctx, func(a model.Activity) bool { return a.RepositoryID == id }, limit, before)
 }
 func (m *MemoryActivities) ListRecent(ctx context.Context, limit int) ([]model.Activity, error) {
@@ -336,6 +366,9 @@ func (m *MemoryActivities) LatestFinishedPerRepository(ctx context.Context) ([]m
 	return out, nil
 }
 func (m *MemoryActivities) ListFinishedBeyond(ctx context.Context, id string, keep int) ([]model.Activity, error) {
+	if err := ValidateUUIDv4ID(id); err != nil {
+		return nil, err
+	}
 	all, err := m.activityList(ctx, func(a model.Activity) bool { return a.RepositoryID == id && a.Status.IsFinished() }, 0, nil)
 	if err != nil {
 		return nil, err
@@ -356,6 +389,11 @@ func (m *MemoryActivities) DeleteMany(ctx context.Context, ids []string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	for _, id := range ids {
+		if err := ValidateUUIDv4ID(id); err != nil {
+			return err
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.check(); err != nil {
@@ -368,6 +406,9 @@ func (m *MemoryActivities) DeleteMany(ctx context.Context, ids []string) error {
 }
 func (m *MemoryActivities) DeleteByRepository(ctx context.Context, id string) ([]string, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ValidateUUIDv4ID(id); err != nil {
 		return nil, err
 	}
 	m.mu.Lock()

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"gitsync/internal/model"
 	"gitsync/internal/store"
 	"gitsync/internal/store/storetest"
@@ -121,6 +122,7 @@ func TestBoltRandomizedIndexConsistency(t *testing.T) {
 	rng := rand.New(rand.NewSource(17))
 	ids := make([]string, 0)
 	statuses := []model.ActivityStatus{model.ActivityQueued, model.ActivityRunning, model.ActivitySuccess, model.ActivityFailed, model.ActivityInterrupted}
+	repoIDs := []string{uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()}
 	for i := 0; i < 160; i++ {
 		if len(ids) > 0 && rng.Intn(5) == 0 {
 			index := rng.Intn(len(ids))
@@ -134,7 +136,7 @@ func TestBoltRandomizedIndexConsistency(t *testing.T) {
 			}
 			continue
 		}
-		a := model.Activity{RepositoryID: fmt.Sprintf("repo-%d", rng.Intn(4)), RepositoryName: "repo", Status: statuses[rng.Intn(len(statuses))], Trigger: model.TriggerManual, Source: model.SourceManual, CreatedAt: time.Unix(1_700_000_000+int64(i), 0).UTC()}
+		a := model.Activity{RepositoryID: repoIDs[rng.Intn(len(repoIDs))], RepositoryName: "repo", Status: statuses[rng.Intn(len(statuses))], Trigger: model.TriggerManual, Source: model.SourceManual, CreatedAt: time.Unix(1_700_000_000+int64(i), 0).UTC()}
 		if e := activities.Create(ctx, &a); e != nil {
 			t.Fatal(e)
 		}

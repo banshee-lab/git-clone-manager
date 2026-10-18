@@ -151,6 +151,9 @@ func (d *DB) CreateRepository(ctx context.Context, r *model.Repository) error {
 	}
 	v := *r
 	initRepo(&v)
+	if err := store.ValidateUUIDv4ID(v.ID); err != nil {
+		return err
+	}
 	data, err := encode(v)
 	if err != nil {
 		return err
@@ -178,6 +181,9 @@ func (d *DB) CreateRepository(ctx context.Context, r *model.Repository) error {
 }
 func (d *DB) GetRepository(ctx context.Context, id string) (*model.Repository, error) {
 	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	if err := store.ValidateUUIDv4ID(id); err != nil {
 		return nil, err
 	}
 	var v model.Repository
@@ -234,6 +240,9 @@ func (d *DB) UpdateRepository(ctx context.Context, r *model.Repository) error {
 	if r == nil {
 		return errors.New("nil repository")
 	}
+	if err := store.ValidateUUIDv4ID(r.ID); err != nil {
+		return err
+	}
 	v := *r
 	v.Name = strings.TrimSpace(v.Name)
 	v.UpdatedAt = time.Now().UTC()
@@ -271,6 +280,9 @@ func (d *DB) DeleteRepository(ctx context.Context, id string) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
+	if err := store.ValidateUUIDv4ID(id); err != nil {
+		return err
+	}
 	return d.db.Update(func(tx *bbolt.Tx) error {
 		repos, names := tx.Bucket(bucketRepos), tx.Bucket(bucketRepoNames)
 		var v model.Repository
@@ -293,6 +305,12 @@ func (d *DB) CreateActivity(ctx context.Context, a *model.Activity) error {
 	}
 	v := *a
 	initActivity(&v)
+	if err := store.ValidateUUIDv4ID(v.ID); err != nil {
+		return err
+	}
+	if err := store.ValidateUUIDv4ID(v.RepositoryID); err != nil {
+		return err
+	}
 	data, err := encode(v)
 	if err != nil {
 		return err
@@ -325,6 +343,9 @@ func (d *DB) GetActivity(ctx context.Context, id string) (*model.Activity, error
 	if err := contextErr(ctx); err != nil {
 		return nil, err
 	}
+	if err := store.ValidateUUIDv4ID(id); err != nil {
+		return nil, err
+	}
 	var a model.Activity
 	err := d.db.View(func(tx *bbolt.Tx) error { return decode(tx.Bucket(bucketActivities).Get([]byte(id)), &a) })
 	if err != nil {
@@ -338,6 +359,12 @@ func (d *DB) UpdateActivity(ctx context.Context, a *model.Activity) error {
 	}
 	if a == nil {
 		return errors.New("nil activity")
+	}
+	if err := store.ValidateUUIDv4ID(a.ID); err != nil {
+		return err
+	}
+	if err := store.ValidateUUIDv4ID(a.RepositoryID); err != nil {
+		return err
 	}
 	v := *a
 	if v.StartedAt != nil {
@@ -395,6 +422,9 @@ func readActivity(tx *bbolt.Tx, id []byte) (model.Activity, error) {
 	return a, err
 }
 func (d *DB) ListByRepository(ctx context.Context, id string, limit int, before *time.Time) ([]model.Activity, error) {
+	if err := store.ValidateUUIDv4ID(id); err != nil {
+		return nil, err
+	}
 	return d.listIndex(ctx, bucketActByRepo, []byte(id+"\x00"), limit, before, true, nil)
 }
 func (d *DB) ListRecent(ctx context.Context, limit int) ([]model.Activity, error) {
@@ -487,6 +517,9 @@ func (d *DB) LatestFinishedPerRepository(ctx context.Context) ([]model.Activity,
 	return out, nil
 }
 func (d *DB) ListFinishedBeyond(ctx context.Context, id string, keep int) ([]model.Activity, error) {
+	if err := store.ValidateUUIDv4ID(id); err != nil {
+		return nil, err
+	}
 	all, err := d.listIndex(ctx, bucketActByRepo, []byte(id+"\x00"), 0, nil, true, func(a model.Activity) bool { return a.Status.IsFinished() })
 	if err != nil {
 		return nil, err
@@ -506,6 +539,11 @@ func (d *DB) ListFinishedBeyond(ctx context.Context, id string, keep int) ([]mod
 func (d *DB) DeleteMany(ctx context.Context, ids []string) error {
 	if err := contextErr(ctx); err != nil {
 		return err
+	}
+	for _, id := range ids {
+		if err := store.ValidateUUIDv4ID(id); err != nil {
+			return err
+		}
 	}
 	return d.db.Update(func(tx *bbolt.Tx) error {
 		for _, id := range ids {
@@ -536,6 +574,9 @@ func (d *DB) DeleteMany(ctx context.Context, ids []string) error {
 }
 func (d *DB) DeleteByRepository(ctx context.Context, id string) ([]string, error) {
 	if err := contextErr(ctx); err != nil {
+		return nil, err
+	}
+	if err := store.ValidateUUIDv4ID(id); err != nil {
 		return nil, err
 	}
 	ids := []string{}

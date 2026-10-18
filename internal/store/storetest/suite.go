@@ -15,6 +15,11 @@ import (
 
 type Factory func(*testing.T) (store.Repositories, store.Activities, error)
 
+const (
+	repositoryIDOne = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	repositoryIDTwo = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+)
+
 // RunSuite runs the same behavioral checks against each store implementation.
 func RunSuite(t *testing.T, factory Factory) {
 	t.Helper()
@@ -94,6 +99,41 @@ func RunSuite(t *testing.T, factory Factory) {
 			t.Fatalf("deleted repository error = %v", err)
 		}
 	})
+	t.Run("reject malformed IDs before index queries or deletes", func(t *testing.T) {
+		r, a := newStores(t)
+		ctx := context.Background()
+		badRepo := repository("Malformed")
+		badRepo.ID = "a"
+		if err := r.Create(ctx, &badRepo); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("malformed repository ID error = %v, want ErrInvalid", err)
+		}
+		valid := activity(repositoryIDOne, model.ActivityQueued, time.Now().UTC())
+		if err := a.Create(ctx, &valid); err != nil {
+			t.Fatal(err)
+		}
+		badRepositoryID := activity("a\x00b", model.ActivityQueued, time.Now().UTC())
+		if err := a.Create(ctx, &badRepositoryID); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("delimiter-bearing repository ID error = %v, want ErrInvalid", err)
+		}
+		badActivityID := activity(repositoryIDOne, model.ActivityQueued, time.Now().UTC())
+		badActivityID.ID = "not-a-uuid"
+		if err := a.Create(ctx, &badActivityID); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("malformed activity ID error = %v, want ErrInvalid", err)
+		}
+		if _, err := a.ListByRepository(ctx, "a", 0, nil); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("malformed list repository ID error = %v, want ErrInvalid", err)
+		}
+		if _, err := a.DeleteByRepository(ctx, "a"); !errors.Is(err, store.ErrInvalid) {
+			t.Fatalf("malformed delete repository ID error = %v, want ErrInvalid", err)
+		}
+		if _, err := a.Get(ctx, valid.ID); err != nil {
+			t.Fatalf("valid indexed activity was affected: %v", err)
+		}
+		ids, err := a.DeleteByRepository(ctx, repositoryIDOne)
+		if err != nil || len(ids) != 1 || ids[0] != valid.ID {
+			t.Fatalf("valid repository delete = %v, %v", ids, err)
+		}
+	})
 	t.Run("activity CRUD, ordering, paging, active and retention", func(t *testing.T) {
 		_, a := newStores(t)
 		ctx := context.Background()
@@ -101,7 +141,7 @@ func RunSuite(t *testing.T, factory Factory) {
 		statuses := []model.ActivityStatus{model.ActivitySuccess, model.ActivityRunning, model.ActivityFailed, model.ActivityQueued, model.ActivityInterrupted}
 		items := make([]model.Activity, len(statuses))
 		for i, status := range statuses {
-			items[i] = activity("repo", status, base.Add(time.Duration(i)*time.Second))
+			items[i] = activity(repositoryIDOne, status, base.Add(time.Duration(i)*time.Second))
 			if err := a.Create(ctx, &items[i]); err != nil {
 				t.Fatal(err)
 			}
@@ -114,7 +154,7 @@ func RunSuite(t *testing.T, factory Factory) {
 		if err = a.Update(ctx, got); err != nil {
 			t.Fatal(err)
 		}
-		list, err := a.ListByRepository(ctx, "repo", 0, nil)
+		list, err := a.ListByRepository(ctx, repositoryIDOne, 0, nil)
 		if err != nil || len(list) != 5 {
 			t.Fatalf("ListByRepository len=%d err=%v", len(list), err)
 		}
@@ -122,7 +162,7 @@ func RunSuite(t *testing.T, factory Factory) {
 			t.Fatalf("newest-first order = %v .. %v", list[0].ID, list[4].ID)
 		}
 		before := base.Add(4 * time.Second)
-		page, err := a.ListByRepository(ctx, "repo", 2, &before)
+		page, err := a.ListByRepository(ctx, repositoryIDOne, 2, &before)
 		if err != nil || len(page) != 2 || page[0].ID != items[3].ID {
 			t.Fatalf("paged result = %+v, %v", page, err)
 		}
@@ -148,13 +188,13 @@ func RunSuite(t *testing.T, factory Factory) {
 			t.Fatalf("finished transition left active index entry: count=%d err=%v", len(active), err)
 		}
 		for i := 0; i < 3; i++ {
-			v := activity("repo", model.ActivitySuccess, base.Add(time.Duration(10+i)*time.Second))
+			v := activity(repositoryIDOne, model.ActivitySuccess, base.Add(time.Duration(10+i)*time.Second))
 			if err = a.Create(ctx, &v); err != nil {
 				t.Fatal(err)
 			}
 		}
 		for _, tc := range []struct{ keep, want int }{{0, 6}, {1, 5}, {2, 4}, {20, 0}} {
-			beyond, err := a.ListFinishedBeyond(ctx, "repo", tc.keep)
+			beyond, err := a.ListFinishedBeyond(ctx, repositoryIDOne, tc.keep)
 			if err != nil || len(beyond) != tc.want {
 				t.Errorf("ListFinishedBeyond(%d) len=%d, err=%v, want %d", tc.keep, len(beyond), err, tc.want)
 			}
@@ -169,7 +209,7 @@ func RunSuite(t *testing.T, factory Factory) {
 		if _, err = a.Get(ctx, items[0].ID); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("deleted activity error = %v", err)
 		}
-		ids, err := a.DeleteByRepository(ctx, "repo")
+		ids, err := a.DeleteByRepository(ctx, repositoryIDOne)
 		if err != nil || len(ids) != 7 {
 			t.Fatalf("DeleteByRepository ids=%d err=%v", len(ids), err)
 		}
@@ -184,7 +224,7 @@ func RunSuite(t *testing.T, factory Factory) {
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				v := activity("parallel", model.ActivityQueued, time.Now().UTC().Add(time.Duration(i)*time.Nanosecond))
+				v := activity(repositoryIDTwo, model.ActivityQueued, time.Now().UTC().Add(time.Duration(i)*time.Nanosecond))
 				if err := a.Create(ctx, &v); err != nil {
 					errs <- err
 					return
@@ -199,7 +239,7 @@ func RunSuite(t *testing.T, factory Factory) {
 					errs <- err
 					return
 				}
-				if _, err = a.ListByRepository(ctx, "parallel", 10, nil); err != nil {
+				if _, err = a.ListByRepository(ctx, repositoryIDTwo, 10, nil); err != nil {
 					errs <- err
 				}
 			}(i)
