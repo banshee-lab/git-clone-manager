@@ -1,0 +1,22 @@
+# Go
+/vendor/
+*.test
+*.out
+/gitsync
+
+# Frontend
+/web/node_modules/
+/web/.svelte-kit/
+/web/build/
+
+# Runtime data and local configuration
+/data/
+/repos/
+config.yaml
+config.local.yaml
+.env
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
