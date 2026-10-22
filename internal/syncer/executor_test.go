@@ -51,7 +51,7 @@ func TestExecutorExplicitBranchClone(t *testing.T) {
 	remote, seed, bare := makeRemote(t)
 	run(t, seed, "git", "checkout", "-b", "stable")
 	commit(t, seed, "stable commit")
-	run(t, seed, "git", "push", "origin", "stable")
+	run(t, seed, "git", "push", "-u", "origin", "stable")
 	e := newTestExecutor(t, map[string]string{remote: bare})
 	repo := model.Repository{Name: "sample", URL: remote, Branch: "stable", Path: filepath.Join(t.TempDir(), "clone"), AccessUsername: "git"}
 	result, err := e.Run(context.Background(), repo, Request{}, ioDiscard{})
@@ -241,6 +241,8 @@ func TestExecutorDirtyBranchSwitchRequiresHardReset(t *testing.T) {
 
 func commitLocal(t *testing.T, dir, message string) {
 	t.Helper()
+	run(t, dir, "git", "config", "user.name", "Test")
+	run(t, dir, "git", "config", "user.email", "test@example.invalid")
 	if err := os.WriteFile(filepath.Join(dir, "README"), []byte(message+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

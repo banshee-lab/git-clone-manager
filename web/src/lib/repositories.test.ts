@@ -37,7 +37,7 @@ describe("repository form helpers", () => {
       { dataDir: "/data" },
     );
     expect(dataDirErrors.path).toBe(
-      "Clone path cannot be inside the storage data_dir.",
+      "Clone path cannot be inside the storage data directory (/data).",
     );
 
     const overlapErrors = validateRepositoryForm(
