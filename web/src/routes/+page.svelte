@@ -423,8 +423,7 @@
 
 <!-- ═══ Live console side sheet ═══ -->
 {#if selectedActivityId}
-  {@const isLive =
-    liveStream !== null && liveStream.connectionState !== "closed"}
+  {@const connectionState = liveStream?.connectionState ?? "closed"}
   {@const finalStatus = liveStream?.activityStatus}
   {@const isDone =
     finalStatus !== undefined &&
@@ -449,18 +448,25 @@
         <span class="console-title">
           {selectedActivity?.repository_name ?? "Live output"}
         </span>
-        {#if isLive && !isDone}
-          <span class="console-state live">
-            <StatusDot tone="primary" pulse />
-            <span>Live</span>
-          </span>
-        {:else if isDone}
+        {#if isDone}
           <span class="console-state done">
             <StatusDot
               tone={finalStatus === "success" ? "success" : "danger"}
             />
             <span>{finalStatus}</span>
           </span>
+        {:else if connectionState === "open"}
+          <span class="console-state live">
+            <StatusDot tone="primary" pulse />
+            <span>Live</span>
+          </span>
+        {:else if connectionState === "reconnecting"}
+          <span class="console-state reconnecting">
+            <StatusDot tone="warning" />
+            <span>Reconnecting…</span>
+          </span>
+        {:else if connectionState === "closed"}
+          <span class="console-state disconnected">Disconnected</span>
         {:else}
           <span class="console-state connecting">Connecting…</span>
         {/if}
@@ -506,8 +512,12 @@
     <div role="status" aria-live="polite" aria-atomic="false" class="sr-only">
       {#if isDone}
         Activity {finalStatus}.
-      {:else if isLive}
-        Activity is running. Console streaming.
+      {:else if connectionState === "open"}
+        Console connected. Streaming activity.
+      {:else if connectionState === "reconnecting"}
+        Console connection lost. Reconnecting.
+      {:else if connectionState === "connecting"}
+        Connecting to activity console.
       {/if}
     </div>
     <div
@@ -518,7 +528,10 @@
       aria-live="off"
     >
       <CodeBlock
-        code={consoleLog || (isLive ? "Waiting for output…" : "No output.")}
+        code={consoleLog ||
+          (connectionState === "open" || connectionState === "connecting"
+            ? "Waiting for output…"
+            : "No output.")}
         language="text"
         copyable
       />
@@ -886,6 +899,17 @@
   }
 
   .console-state.connecting {
+    color: var(--rw-on-surface-muted);
+    font-size: 0.78rem;
+  }
+
+  .console-state.reconnecting {
+    background: var(--rw-warning-soft, #fff7ed);
+    border-color: var(--rw-warning-border, #fdba74);
+    color: var(--rw-warning-text, #9a3412);
+  }
+
+  .console-state.disconnected {
     color: var(--rw-on-surface-muted);
     font-size: 0.78rem;
   }

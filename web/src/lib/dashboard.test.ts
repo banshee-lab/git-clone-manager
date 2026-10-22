@@ -311,6 +311,47 @@ describe("dashboard store", () => {
     expect(store.lastSyncTime).toBeNull();
   });
 
+  it("uses the newest completed activity even when an active one is newer", async () => {
+    const finishedAt = "2024-05-01T10:00:00Z";
+    vi.spyOn(client, "getDashboard").mockResolvedValue(
+      makeDashboard({
+        recent: [
+          makeActivity({
+            id: "active",
+            status: "running",
+            created_at: "2024-05-02T10:00:00Z",
+            started_at: "2024-05-02T10:00:01Z",
+            finished_at: null,
+          }),
+          makeActivity({
+            id: "finished",
+            status: "success",
+            finished_at: finishedAt,
+          }),
+        ],
+      }),
+    );
+    const store = createDashboardStore();
+
+    await store.refresh();
+
+    expect(store.lastSyncTime).toBe(finishedAt);
+  });
+
+  it("does not set last sync time from an active activity event", () => {
+    const store = createDashboardStore();
+    store.handleActivityEvent({
+      activity: makeActivity({
+        status: "queued",
+        created_at: "2024-05-02T10:00:00Z",
+        started_at: null,
+        finished_at: null,
+      }),
+    });
+
+    expect(store.lastSyncTime).toBeNull();
+  });
+
   // ── resync ──
   it("performs a full refresh on resync", async () => {
     const getDashboardSpy = vi.spyOn(client, "getDashboard");

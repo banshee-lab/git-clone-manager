@@ -161,6 +161,11 @@ describe("dashboard page", () => {
     ).toBeInTheDocument();
     const stream = FakeEventSource.instances.at(-1);
     expect(stream?.url).toContain("/api/activities/running-1/stream");
+    expect(screen.getByText("Connecting…")).toBeInTheDocument();
+    stream?.emitError();
+    expect(await screen.findByText("Reconnecting…")).toBeInTheDocument();
+    stream?.emitOpen();
+    expect(await screen.findByText("Live")).toBeInTheDocument();
     stream?.emit("snapshot", {
       status: "running",
       log: "starting\n",

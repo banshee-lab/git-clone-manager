@@ -19,17 +19,11 @@ export function createDashboardStore() {
     running = data.running;
     recent = data.recent;
     attention = data.attention;
-    if (data.recent.length > 0) {
-      const latest = data.recent.reduce((best, act) => {
-        const t = act.finished_at ?? act.started_at ?? act.created_at;
-        const bestT = best.finished_at ?? best.started_at ?? best.created_at;
-        return t > bestT ? act : best;
-      });
-      lastSyncTime =
-        latest.finished_at ?? latest.started_at ?? latest.created_at;
-    } else {
-      lastSyncTime = null;
-    }
+    const finished = data.recent.filter((activity) => activity.finished_at);
+    const latestFinished = finished.sort((a, b) =>
+      (b.finished_at ?? "").localeCompare(a.finished_at ?? ""),
+    )[0];
+    lastSyncTime = latestFinished?.finished_at ?? null;
     error = null;
   }
 
@@ -85,8 +79,12 @@ export function createDashboardStore() {
       .slice(0, 20);
 
     // Update lastSyncTime for finished activities
-    if (act.status !== "queued" && act.status !== "running") {
-      const t = act.finished_at ?? act.started_at ?? act.created_at;
+    if (
+      act.status !== "queued" &&
+      act.status !== "running" &&
+      act.finished_at
+    ) {
+      const t = act.finished_at;
       if (!lastSyncTime || t > lastSyncTime) {
         lastSyncTime = t;
       }
