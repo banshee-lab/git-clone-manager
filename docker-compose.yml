@@ -1,13 +1,12 @@
 services:
   gitsync:
+    network_mode: host
     build:
       context: .
     image: gitsync:dev
-    ports:
-      - "8080:8080"
     environment:
       GITSYNC_SERVER_BASE_URL: http://localhost:8080
-      GITSYNC_OIDC_ISSUER_URL: http://dex:5556/dex
+      GITSYNC_OIDC_ISSUER_URL: http://localhost:5556/default
       GITSYNC_OIDC_CLIENT_ID: gitsync
       GITSYNC_OIDC_CLIENT_SECRET: gitsync-dev-secret
       GITSYNC_OIDC_SESSION_SECRET: gitsync-development-session-secret-change-me
@@ -29,24 +28,20 @@ services:
     # group_add:
     #   - "${DOCKER_GID}"
     depends_on:
-      dex:
-        condition: service_healthy
+      mock-oauth2-server:
+        condition: service_started
     # On openSUSE 16, uncomment when mounting docker.sock under SELinux:
     # security_opt:
     #   - label=disable
 
-  dex:
-    image: ghcr.io/dexidp/dex:v2.41.1
-    command: ["dex", "serve", "/etc/dex/config.yaml"]
+  mock-oauth2-server:
+    network_mode: host
+    image: ghcr.io/navikt/mock-oauth2-server:2.3.0
+    environment:
+      SERVER_PORT: 5556
+      JSON_CONFIG_PATH: /app/config.json
     volumes:
-      - ./deploy/dex/config.yaml:/etc/dex/config.yaml:ro
-    ports:
-      - "5556:5556"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/.well-known/openid-configuration"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
+      - ./deploy/mock-oauth2-server/config.json:/app/config.json:ro
 
 volumes:
   gitsync-data:

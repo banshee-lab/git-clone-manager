@@ -14,6 +14,6 @@ Set `server.base_url` to the public HTTPS origin. Configure the issuer URL, clie
 
 GitSync uses authorization code flow with PKCE, state, and nonce validation. The session cookie is signed and encrypted, `HttpOnly`, `SameSite=Lax`, and marked `Secure` when `server.base_url` uses HTTPS. Logout clears the local session cookie; it does not initiate IdP logout.
 
-## Local Dex
+## Local mock provider
 
-The Compose stack starts Dex with a static development account. Use `admin@example.com` / `password` for local testing only. The callback is `http://localhost:8080/auth/callback` in the Compose example. Configure the hostname `dex` to resolve to the host loopback address so the browser and containers can reach the local issuer. Replace the client secret, session secret, and static user before any shared deployment.
+The Compose stack starts `mock-oauth2-server` with interactive login disabled. Visiting the sign-in flow automatically returns a fixed development identity: `admin@example.com` (`gitsync-local-admin`). The callback is `http://localhost:8080/auth/callback` and the issuer is `http://localhost:5556/default`. Both Compose services use host networking, so ports `8080` and `5556` must be available on the host. Token claims are configured in `deploy/mock-oauth2-server/config.json`. This mock provider is only for local testing; replace the client secret, session secret, and provider before any shared deployment.

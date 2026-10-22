@@ -1,10 +1,6 @@
 # Docker Compose on openSUSE 16
 
-The local stack uses named volumes for `/data` and `/repos`; Docker manages their ownership for the container's non-root UID 10001. Add `127.0.0.1 dex` to the host's `/etc/hosts` so both the browser and the GitSync container can resolve the Dex issuer at `http://dex:5556`:
-
-```sh
-echo "127.0.0.1 dex" | sudo tee -a /etc/hosts
-```
+The local stack uses host networking so GitSync and the browser can both reach the mock OIDC provider at `http://localhost:5556`. This means ports `8080` and `5556` must be available on the host. The stack also uses named volumes for `/data` and `/repos`; Docker manages their ownership for the container's non-root UID 10001.
 
 SELinux is enforcing by default. Check with `getenforce`. Named volumes work as-is. If you bind-mount a host directory, label it for container use with `:z` and give UID 10001 ownership, for example:
 
@@ -28,11 +24,7 @@ On openSUSE, the socket mount also needs `security_opt: ["label=disable"]` on th
 
 ## Local login
 
-Add `127.0.0.1 dex` to `/etc/hosts`, then run `docker compose up --build`. Dex's static user is `admin@example.com` / `password`. For a different password, generate a bcrypt hash and replace the `staticPasswords[].hash` value in `deploy/dex/config.yaml`:
-
-```sh
-docker run --rm httpd:alpine htpasswd -bnBC 10 "" password | tr -d ':\n'
-```
+Run `docker compose up --build`. The mock provider automatically signs in as `admin@example.com`; its token claims are configured in `deploy/mock-oauth2-server/config.json`.
 
 The web build uses `node:24-alpine` because SvelteKit in the lockfile requires Node 22.17 or later. This affects only the frontend build stage; Go builds use `golang:1.27-alpine`.
 

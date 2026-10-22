@@ -20,3 +20,5 @@ config.local.yaml
 .DS_Store
 .idea/
 .vscode/
+
+plan

@@ -4,13 +4,13 @@ GitSync is a self-hosted service that clones and synchronizes Git repositories o
 
 ## Getting started
 
-Docker Compose builds the frontend and Go server, then starts GitSync with a local Dex identity provider. On a fresh checkout:
+Docker Compose builds the frontend and Go server, then starts GitSync with a local mock OIDC provider. On a fresh checkout:
 
 ```sh
 docker compose up --build
 ```
 
-For the local Dex issuer URL to resolve in the browser as well as in Compose, add `127.0.0.1 dex` to the host's name service (for example, `/etc/hosts`). Open `http://localhost:8080` and sign in with the development account `admin@example.com` / `password`. Change these development credentials before using the stack outside a private local environment. See [local Compose and openSUSE notes](docs/docker-compose-opensuse.md).
+The local Compose services use host networking, so the browser and GitSync reach the mock provider at `http://localhost:5556` without a host-name mapping. Open `http://localhost:8080`; sign-in automatically returns the development identity `admin@example.com` (no password prompt). This mock provider is for local testing only. See [local Compose and openSUSE notes](docs/docker-compose-opensuse.md).
 
 Production deployment must use HTTPS, a production OIDC client, unique secrets, persistent `/data` and `/repos` volumes, and a reverse proxy. See [deployment](docs/deployment.md), [OIDC setup](docs/oidc.md), and [configuration](docs/configuration.md).
 

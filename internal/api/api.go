@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -234,6 +235,7 @@ func (s *Service) GetRepository(w http.ResponseWriter, r *http.Request) {
 			respond.Error(w, http.StatusNotFound, "not_found", "repository not found")
 			return
 		}
+		slog.Error("failed to load repository", "component", "api", "method", r.Method, "path", r.URL.Path, "repository_id", id, "error", err)
 		respond.Error(w, http.StatusInternalServerError, "internal", "failed to load repository")
 		return
 	}
@@ -1050,4 +1052,6 @@ func writeSSEComment(w http.ResponseWriter, flusher http.Flusher, text string) e
 	return nil
 }
 
-func (s *Service) loggerWarn(msg string, args ...any) {}
+func (s *Service) loggerWarn(msg string, args ...any) {
+	slog.Warn(msg, append([]any{"component", "api"}, args...)...)
+}

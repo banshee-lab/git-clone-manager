@@ -29,7 +29,7 @@ This matrix maps the original brief and plan to implementation and regression co
 | SvelteKit, Svelte 5, `@runwisp/ui`, light/dark/auto, frontend tests | Phases 10–12 | Docker target `web-test` runs Svelte check, lint/format, and Vitest; layout test `renders the workspace shell and persists theme toggle choices` |
 | Docker-only deployment; frontend/backend built in image; backend serves SPA and API | Phase 13 | Dockerfile `web`, `build`, and `final` stages; `TestHandlerServesEmbeddedFile`; `TestHandlerFallsBackToIndex`; Docker build target |
 | Build base, runtime packages, non-root UID, persistent volumes | Phase 13 | Dockerfile inspection and Phase 13 image/Compose smoke checks recorded in `PROGRESS.md` |
-| Compose includes local OIDC provider | Phase 13 | `docker compose config --quiet`; Phase 13 Dex discovery and OAuth smoke checks recorded in `PROGRESS.md` |
+| Compose includes local OIDC provider | Phase 13 | `docker compose config --quiet`; Phase 13 mock provider discovery and OAuth smoke checks recorded in `PROGRESS.md` |
 | Global Telegram and signed webhook notifications | Phase 9 | `TestTelegramRequestEscapingAndSecretSafeFailure`; `TestWebhookPayloadHeadersAndSignature`; `TestRetryPolicy`; `TestInterruptedNotificationUsesFortyLineLogTailAndDoesNotBlock` |
 | Redacted startup configuration, `--version`, and structured log context | Phase 14 | `TestRedactedAndExample`; `go run ./cmd/gitsync --version`; log fields `component`, `repo_id`, and `activity_id` |
 | GPL-3.0-or-later license | Phase 1 | `LICENSE` |

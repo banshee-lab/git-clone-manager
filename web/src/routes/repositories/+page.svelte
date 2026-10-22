@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "./repositories.css";
   import { Button, Heading, Input, StatusDot } from "@runwisp/ui";
   import { onMount } from "svelte";
   import { resolve } from "$app/paths";
@@ -42,7 +43,7 @@
   <title>Repositories · GitSync</title>
 </svelte:head>
 
-<section class="page-shell">
+<section class="repositories-page page-shell">
   <header class="toolbar">
     <Heading level={1} size="lg">Repositories</Heading>
     <div class="toolbar-actions">
@@ -99,98 +100,3 @@
     </ul>
   {/if}
 </section>
-
-<style>
-  .page-shell {
-    width: min(100%, 68rem);
-    margin: 0 auto;
-    padding: 2rem 0 3rem;
-  }
-  .toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-  .toolbar-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-  .search-row {
-    margin-bottom: 1.25rem;
-  }
-  .repo-list {
-    display: grid;
-    gap: 0.85rem;
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .repo-card {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 1.6fr);
-    align-items: center;
-    gap: 1rem;
-    border: 1px solid var(--rw-outline);
-    border-radius: 0.75rem;
-    background: var(--rw-surface-raised);
-    padding: 1rem 1.1rem;
-    text-decoration: none;
-    color: var(--rw-on-surface);
-  }
-  .repo-card.active {
-    border-color: var(--rw-primary);
-    background: var(--rw-primary-soft);
-  }
-  .meta {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-  .meta strong {
-    font-weight: 600;
-  }
-  .meta small,
-  .path {
-    color: var(--rw-on-surface-muted);
-    font-family: var(--rw-font-mono);
-    font-size: 0.72rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .empty-state {
-    display: grid;
-    place-items: center;
-    min-height: 12rem;
-    padding: 2rem;
-    border: 1px dashed var(--rw-outline-hover);
-    border-radius: 0.9rem;
-    color: var(--rw-on-surface-muted);
-    text-align: center;
-  }
-  .empty-state.card {
-    background: var(--rw-surface-raised);
-  }
-  .empty-state h2 {
-    margin: 0 0 0.35rem;
-    color: var(--rw-on-surface);
-  }
-  .empty-state.error {
-    color: var(--rw-danger-text);
-  }
-  @media (max-width: 767px) {
-    .toolbar {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .repo-card {
-      grid-template-columns: auto minmax(0, 1fr);
-    }
-    .path {
-      grid-column: 2;
-    }
-  }
-</style>

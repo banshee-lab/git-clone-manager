@@ -104,7 +104,7 @@ export function validateRepositoryForm(
     } else if (options.dataDir) {
       const dataDir = (options.dataDir ?? "").trim();
       if (dataDir && isInsideDir(path, dataDir)) {
-        errors.path = "Clone path cannot be inside the storage data_dir.";
+        errors.path = `Clone path cannot be inside the storage data directory (${dataDir}).`;
       }
     }
     if (!errors.path && options.existingPaths?.length) {
@@ -143,18 +143,13 @@ export function validateRepositoryForm(
 }
 
 function isInsideDir(path: string, dir: string): boolean {
-  const base = (dir ?? "").trim();
-  const candidate = (path ?? "").trim();
-  if (!candidate || !base || candidate === base) return false;
-  const relative = candidate.startsWith(base)
-    ? candidate.slice(base.length)
-    : "";
-  return (
-    relative === "" ||
-    (relative.startsWith("/") &&
-      !relative.startsWith("../") &&
-      relative !== "/..")
-  );
+  const base = normalizeFilesystemPath((dir ?? "").trim());
+  const candidate = normalizeFilesystemPath((path ?? "").trim());
+  if (!candidate || !base) return false;
+  if (candidate === base) return true;
+  return base === "/"
+    ? candidate.startsWith("/")
+    : candidate.startsWith(`${base}/`);
 }
 
 function isPathOverlap(a: string, b: string): boolean {

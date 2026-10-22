@@ -170,9 +170,9 @@ func newMux(cfg config.Config, authService *auth.Service, repos store.Repositori
 	mux.Handle("GET /api/dashboard", authService.RequireSession(http.HandlerFunc(apiService.Dashboard)))
 	mux.Handle("GET /api/repositories", authService.RequireSession(http.HandlerFunc(apiService.ListRepositories)))
 	mux.Handle("POST /api/repositories", authService.RequireSession(http.HandlerFunc(apiService.PostRepository)))
-	mux.Handle("GET /api/repositories/", authService.RequireSession(http.HandlerFunc(apiService.GetRepository)))
-	mux.Handle("PUT /api/repositories/", authService.RequireSession(http.HandlerFunc(apiService.UpdateRepository)))
-	mux.Handle("DELETE /api/repositories/", authService.RequireSession(http.HandlerFunc(apiService.DeleteRepository)))
+	mux.Handle("GET /api/repositories/{id}", authService.RequireSession(http.HandlerFunc(apiService.GetRepository)))
+	mux.Handle("PUT /api/repositories/{id}", authService.RequireSession(http.HandlerFunc(apiService.UpdateRepository)))
+	mux.Handle("DELETE /api/repositories/{id}", authService.RequireSession(http.HandlerFunc(apiService.DeleteRepository)))
 	mux.Handle("POST /api/repositories/{id}/sync", authService.RequireSession(http.HandlerFunc(apiService.SyncRepository)))
 	mux.Handle("POST /api/sync", authService.RequireSession(http.HandlerFunc(apiService.SyncAll)))
 	mux.Handle("GET /api/repositories/{id}/activities", authService.RequireSession(http.HandlerFunc(apiService.RepositoryActivities)))
@@ -186,7 +186,56 @@ func newMux(cfg config.Config, authService *auth.Service, repos store.Repositori
 	if err != nil {
 		return nil, fmt.Errorf("configure cross-origin protection: %w", err)
 	}
-	return protection.Handler(mux), nil
+	return requestLogger(protection.Handler(mux)), nil
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *statusWriter) Flush() {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		wrapped := &statusWriter{ResponseWriter: w}
+		next.ServeHTTP(wrapped, r)
+		status := wrapped.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		attrs := []any{"component", "http", "method", r.Method, "path", r.URL.Path, "status", status, "duration_ms", time.Since(started).Milliseconds()}
+		if status >= http.StatusInternalServerError {
+			slog.Error("HTTP request failed", attrs...)
+		} else {
+			slog.Info("HTTP request completed", attrs...)
+		}
+	})
 }
 
 func healthz(w http.ResponseWriter, _ *http.Request) {

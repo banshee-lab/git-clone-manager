@@ -6,7 +6,7 @@ Run this procedure from a fresh clone on a Docker host. It checks the deployed s
 
 1. Clone the repository into a clean working directory.
 2. Confirm Docker Engine and the Compose plugin are available.
-3. Ensure `dex` resolves to `127.0.0.1` on the host so the browser can reach the local issuer. On openSUSE 16, also read [deployment notes](deployment.md) for SELinux and volume ownership.
+3. The local Compose services use host networking; ensure ports `8080` and `5556` are available. On openSUSE 16, also read [deployment notes](deployment.md) for SELinux and volume ownership.
 4. Run:
 
    ```sh
@@ -30,7 +30,7 @@ Use current Chrome and Firefox. For each browser, complete every row below in de
 
 | Check | Result |
 |---|---|
-| `ACC-01` Sign in with the local Dex development user; confirm dashboard and repository navigation load. | ☐ |
+| `ACC-01` Sign in through the local mock OIDC provider; confirm dashboard and repository navigation load. | ☐ |
 | `ACC-02` Create a test repository; verify its initial clone activity, webhook URL/secret, and repository detail. | ☐ |
 | `ACC-03` Edit branch/settings; verify blank token keeps the existing token and explicit clear removes it. | ☐ |
 | `ACC-04` Trigger Sync now and Sync all; verify activity state and completion update without a page reload. | ☐ |

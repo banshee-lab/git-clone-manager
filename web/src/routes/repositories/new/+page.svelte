@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "../new.css";
   import { onMount } from "svelte";
   import { Button, Heading, Input, Textarea, Toggle } from "@runwisp/ui";
   import { createRepository, getMeta, listRepositories } from "#lib/api/client";
@@ -95,7 +96,7 @@
   <title>Create repository · GitSync</title>
 </svelte:head>
 
-<section class="page-shell">
+<section class="repository-new-page page-shell">
   <Heading level={1} size="lg">Add repository</Heading>
   <form
     class="form-grid"
@@ -112,9 +113,8 @@
         oninput={(event) => {
           handleNameChange((event.currentTarget as HTMLInputElement).value);
         }}
-        aria-invalid={Boolean(errors.name)}
+        error={errors.name}
       />
-      {#if errors.name}<small class="error">{errors.name}</small>{/if}
     </div>
 
     <div class="field">
@@ -122,9 +122,8 @@
       <Input
         id="url"
         bind:value={form.url}
-        aria-invalid={Boolean(errors.url)}
+        error={errors.url}
       />
-      {#if errors.url}<small class="error">{errors.url}</small>{/if}
     </div>
 
     <div class="field">
@@ -133,9 +132,8 @@
         id="branch"
         bind:value={form.branch}
         placeholder="default branch"
-        aria-invalid={Boolean(errors.branch)}
+        error={errors.branch}
       />
-      {#if errors.branch}<small class="error">{errors.branch}</small>{/if}
     </div>
 
     <div class="field">
@@ -143,10 +141,9 @@
       <Input
         id="path"
         bind:value={form.path}
-        aria-invalid={Boolean(errors.path)}
+        error={errors.path}
         onfocus={() => (pathTouched = true)}
       />
-      {#if errors.path}<small class="error">{errors.path}</small>{/if}
       <small class="hint">
         Suggested default: {suggestClonePath(
           form.name || "repository",
@@ -160,11 +157,8 @@
       <Input
         id="access_username"
         bind:value={form.access_username}
-        aria-invalid={Boolean(errors.access_username)}
+        error={errors.access_username}
       />
-      {#if errors.access_username}<small class="error"
-          >{errors.access_username}</small
-        >{/if}
     </div>
 
     <div class="field">
@@ -195,10 +189,8 @@
         type="number"
         min="0"
         step="1"
+        error={errors.post_command_timeout_seconds}
       />
-      {#if errors.post_command_timeout_seconds}<small class="error"
-          >{errors.post_command_timeout_seconds}</small
-        >{/if}
     </div>
 
     <div class="field">
@@ -232,60 +224,3 @@
     </div>
   </form>
 </section>
-
-<style>
-  .page-shell {
-    width: min(100%, 48rem);
-    margin: 0 auto;
-    padding: 2rem 0 3rem;
-  }
-
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.1rem;
-    margin-top: 1.5rem;
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-
-  .field-span-2 {
-    grid-column: 1 / -1;
-  }
-
-  label {
-    font-weight: 600;
-    color: var(--rw-on-surface);
-  }
-
-  .hint,
-  .warning,
-  .error {
-    font-size: 0.75rem;
-  }
-
-  .warning {
-    color: var(--rw-warning-text, #9a6700);
-  }
-
-  .error {
-    color: var(--rw-danger-text);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-  }
-
-  @media (max-width: 767px) {
-    .form-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>

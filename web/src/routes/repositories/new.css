@@ -1,0 +1,54 @@
+.repository-new-page .page-shell {
+    width: min(100%, 48rem);
+    margin: 0 auto;
+    padding: 2rem 0 3rem;
+  }
+
+  .repository-new-page .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.1rem;
+    margin-top: 1.5rem;
+  }
+
+  .repository-new-page .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .repository-new-page .field-span-2 {
+    grid-column: 1 / -1;
+  }
+
+  .repository-new-page label {
+    font-weight: 600;
+    color: var(--rw-on-surface);
+  }
+
+  .repository-new-page .hint,
+  .repository-new-page .warning,
+  .repository-new-page .error {
+    font-size: 0.75rem;
+  }
+
+  .repository-new-page .warning {
+    color: var(--rw-warning-text, #9a6700);
+  }
+
+  .repository-new-page .error {
+    color: var(--rw-danger-text);
+  }
+
+  .repository-new-page .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  @media (max-width: 767px) {
+    .repository-new-page .form-grid {
+      grid-template-columns: 1fr;
+    }
+  }

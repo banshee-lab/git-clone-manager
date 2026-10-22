@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "../../edit.css";
   import { onMount } from "svelte";
   import { Button, Heading, Input, Textarea, Toggle, toast } from "@runwisp/ui";
   import { page } from "$app/state";
@@ -158,7 +159,7 @@
   <title>Edit repository · GitSync</title>
 </svelte:head>
 
-<section class="page-shell">
+<section class="repository-edit-page page-shell">
   <Heading level={1} size="lg">Edit repository</Heading>
   <form
     class="form-grid"
@@ -345,110 +346,3 @@
     </div>
   </form>
 </section>
-
-<style>
-  .page-shell {
-    width: min(100%, 48rem);
-    margin: 0 auto;
-    padding: 2rem 0 3rem;
-  }
-
-  .form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.1rem;
-    margin-top: 1.5rem;
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-
-  .field-span-2 {
-    grid-column: 1 / -1;
-  }
-
-  label {
-    font-weight: 600;
-    color: var(--rw-on-surface);
-  }
-
-  .label-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .token-badge {
-    font-size: 0.75rem;
-    padding: 0.15rem 0.45rem;
-    border-radius: 9999px;
-    background: var(--rw-surface-sunken);
-    color: var(--rw-on-surface-muted);
-    font-weight: 500;
-  }
-
-  .hint,
-  .warning,
-  .error {
-    font-size: 0.75rem;
-  }
-
-  .warning {
-    color: var(--rw-warning-text, #9a6700);
-  }
-
-  .error {
-    color: var(--rw-danger-text);
-  }
-
-  .mode-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .inline-label {
-    font-size: 0.8rem;
-    color: var(--rw-on-surface-muted);
-  }
-
-  select {
-    min-height: 2.5rem;
-    border: 1px solid var(--rw-outline);
-    border-radius: 0.5rem;
-    background: var(--rw-surface);
-    color: var(--rw-on-surface);
-    padding: 0.5rem 0.75rem;
-  }
-
-  .secret-row {
-    display: grid;
-    gap: 0.6rem;
-  }
-
-  .secret-row :global(input) {
-    width: 100%;
-  }
-
-  .secret-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-  }
-
-  @media (max-width: 767px) {
-    .form-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>
