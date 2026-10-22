@@ -40,7 +40,7 @@
 </script>
 
 <svelte:head>
-  <title>Repositories · GitSync</title>
+  <title>Repositories · Git Clone Manager</title>
 </svelte:head>
 
 <section class="repositories-page page-shell">

@@ -1,4 +1,4 @@
-// Package bolt implements the GitSync stores using bbolt and explicit indexes.
+// Package bolt implements the Git Clone Manager stores using bbolt and explicit indexes.
 package bolt
 
 import (
@@ -41,7 +41,7 @@ func Open(path string) (*DB, error) {
 	}
 	db, err := bbolt.Open(path, 0o600, &bbolt.Options{Timeout: 5 * time.Second})
 	if err != nil {
-		return nil, fmt.Errorf("open database %q (only one GitSync instance may use a data_dir): %w", path, err)
+		return nil, fmt.Errorf("open database %q (only one Git Clone Manager instance may use a data_dir): %w", path, err)
 	}
 	out := &DB{db: db}
 	err = db.Update(func(tx *bbolt.Tx) error {

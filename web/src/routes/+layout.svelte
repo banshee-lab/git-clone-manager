@@ -10,7 +10,6 @@
     Dropdown,
     Heading,
     Input,
-    Logo,
     Separator,
     StatusDot,
     ThemeToggle,
@@ -87,7 +86,7 @@
 </script>
 
 <svelte:head>
-  <title>GitSync</title>
+  <title>Git Clone Manager</title>
   <meta
     name="description"
     content="A clear view of your Git repositories and their latest syncs."
@@ -97,7 +96,7 @@
 {#if data.bootstrapError}
   <main class="bootstrap-error">
     <div class="error-mark" aria-hidden="true">!</div>
-    <Heading level={1} size="2xl">GitSync is unavailable</Heading>
+    <Heading level={1} size="2xl">Git Clone Manager is unavailable</Heading>
     <p>{data.bootstrapError}</p>
     <Button onclick={() => void invalidateAll()}>Try again</Button>
   </main>
@@ -114,12 +113,14 @@
         >
           <span aria-hidden="true">☰</span>
         </button>
-        <a class="brand-link" href={resolve("/")} aria-label="GitSync home">
-          <Logo size="sm" />
-          <span>GitSync <strong>Manager</strong></span>
+        <a class="brand-link" href={resolve("/")} aria-label="Git Clone Manager home">
+          <img class="brand-icon" src="/app.png" alt="" />
+          <span>Git Clone <strong>Manager</strong></span>
         </a>
+        <!--
         <span class="brand-divider" aria-hidden="true"></span>
-        <span class="brand-section">Repository operations</span>
+        <span class="brand-section"></span>
+        -->
       </div>
       <div class="topbar-controls">
         {#if data.user}
@@ -132,16 +133,6 @@
         <ThemeToggle />
       </div>
     </header>
-
-    {#if connectionState === "reconnecting"}
-      <div class="connection-banner" role="status">
-        <StatusDot tone="warning" pulse />
-        <span
-          >Live updates are reconnecting. The page will refresh when the
-          connection returns.</span
-        >
-      </div>
-    {/if}
 
     <div class="workspace">
       {#if sidebarOpen}
@@ -210,9 +201,15 @@
         </div>
         <div class="sidebar-footer">
           <Separator />
-          <span class="sidebar-status"
-            ><StatusDot tone="success" /> Connected</span
-          >
+          <span class="sidebar-status" role="status" aria-live="polite">
+            {#if connectionState === "open"}
+              <StatusDot tone="success" /> Connected
+            {:else if connectionState === "reconnecting"}
+              <StatusDot tone="warning" pulse /> Reconnecting…
+            {:else}
+              <StatusDot tone="primary" pulse /> Connecting…
+            {/if}
+          </span>
         </div>
       </aside>
 

@@ -62,7 +62,7 @@ handles prose and Geist Mono handles the wordmark, navigation, and operational
 labels.
 
 ```text
-┌ GitSync / Repository operations ───────────────── Theme · account ┐
+┌ Git Clone Manager / Repository operations ───────────────── Theme · account ┐
 │ Repositories │                                                │
 │              │  Left-aligned page heading                     │
 │ list slot    │                                                 │

@@ -9,7 +9,7 @@ import type {
 const mockUser: SessionUser = {
   sub: "mock-admin",
   email: "admin@example.test",
-  name: "GitSync admin",
+  name: "Git Clone Manager admin",
   role: "admin",
 };
 

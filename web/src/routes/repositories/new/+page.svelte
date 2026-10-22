@@ -93,7 +93,7 @@
 </script>
 
 <svelte:head>
-  <title>Create repository · GitSync</title>
+  <title>Create repository · Git Clone Manager</title>
 </svelte:head>
 
 <section class="repository-new-page page-shell">

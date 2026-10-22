@@ -1,4 +1,4 @@
-# GitSync web
+# Git Clone Manager web
 
 SvelteKit 3 / Svelte 5 static SPA using the RunWisp UI barrel and its Tailwind
 v4 theme. Install with Yarn Classic from this directory:

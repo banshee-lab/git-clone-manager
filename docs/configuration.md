@@ -1,6 +1,6 @@
 # Configuration
 
-GitSync loads built-in defaults, then an optional YAML file, then environment overrides. Environment values win when both sources set a field. Unknown YAML keys and invalid values stop startup. A missing config file is allowed if the required settings are supplied by the environment.
+Git Clone Manager loads built-in defaults, then an optional YAML file, then environment overrides. Environment values win when both sources set a field. Unknown YAML keys and invalid values stop startup. A missing config file is allowed if the required settings are supplied by the environment.
 
 The config file is selected with `--config <path>`, then `GITSYNC_CONFIG`, then `/etc/gitsync/config.yaml`. Values in YAML strings may use `${VARIABLE}` expansion; an unset variable is a startup error. Use `$$` for a literal dollar sign. Environment lists are comma-separated.
 

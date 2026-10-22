@@ -5,7 +5,7 @@
 /gitsync
 
 # Frontend
-/web/node_modules/
+**/node_modules/
 /web/.svelte-kit/
 /web/build/
 

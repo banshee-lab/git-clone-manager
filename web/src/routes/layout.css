@@ -42,6 +42,12 @@
     opacity: 0.62;
   }
 
+  .app-frame .brand-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+    object-fit: contain;
+  }
+
   .app-frame .brand-divider {
     width: 1px;
     height: 1.25rem;

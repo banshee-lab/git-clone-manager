@@ -24,7 +24,7 @@ This checklist records the Phase 14 review against the implementation and its re
 - Post commands run with the container user's privileges and can access the clone and mounted volumes. Treat repository contents and configured commands as trusted code.
 - Mounting `/var/run/docker.sock` grants root-equivalent control over the host. Do not mount it unless a trusted post command requires it.
 - Activity logs are plain files and may contain sensitive command output unrelated to access tokens. Restrict volume access and backups.
-- GitSync supports one process per bbolt data directory. Do not point multiple replicas at the same database.
+- Git Clone Manager supports one process per bbolt data directory. Do not point multiple replicas at the same database.
 
 ## Scope note
 

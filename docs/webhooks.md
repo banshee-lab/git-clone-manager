@@ -1,16 +1,16 @@
 # Webhooks
 
-Webhook endpoints do not use an OIDC session. Each request must be authenticated with the per-repository secret, or the global fallback secret if the repository secret is empty. GitSync has no rate limiter for `/hooks/*`; put a rate-limiting reverse proxy in front of it. The receiver caps request bodies at 25 MiB.
+Webhook endpoints do not use an OIDC session. Each request must be authenticated with the per-repository secret, or the global fallback secret if the repository secret is empty. Git Clone Manager has no rate limiter for `/hooks/*`; put a rate-limiting reverse proxy in front of it. The receiver caps request bodies at 25 MiB.
 
 Copy the repository's webhook URL and secret from the authenticated repository detail page. Configure the provider to send events to `https://<your-host>/hooks/<repository UUID>`. Use TLS at the reverse proxy. Rotate a secret by editing the repository, then update the provider.
 
 ## GitHub
 
-Create a repository webhook with content type `application/json`, select **Just the push event**, and set the secret to the GitSync webhook secret. GitHub's `X-Hub-Signature-256` HMAC-SHA256 signature is verified against the raw body. `ping` receives a successful ignored response; only `push` events are considered. Tag pushes and pushes to a different tracked branch are acknowledged and ignored.
+Create a repository webhook with content type `application/json`, select **Just the push event**, and set the secret to the Git Clone Manager webhook secret. GitHub's `X-Hub-Signature-256` HMAC-SHA256 signature is verified against the raw body. `ping` receives a successful ignored response; only `push` events are considered. Tag pushes and pushes to a different tracked branch are acknowledged and ignored.
 
 ## GitLab
 
-Add a project webhook at the GitSync URL, set the secret token to the GitSync webhook secret, and enable **Push events**. GitSync checks `X-Gitlab-Token` and accepts only `Push Hook` events. Tag refs and pushes to another tracked branch are acknowledged and ignored.
+Add a project webhook at the Git Clone Manager URL, set the secret token to the Git Clone Manager webhook secret, and enable **Push events**. Git Clone Manager checks `X-Gitlab-Token` and accepts only `Push Hook` events. Tag refs and pushes to another tracked branch are acknowledged and ignored.
 
 ## Generic source
 

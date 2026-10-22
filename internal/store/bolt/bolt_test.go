@@ -81,7 +81,7 @@ func TestBoltLockTimeout(t *testing.T) {
 	if !errors.Is(err, bbolt.ErrTimeout) {
 		t.Fatalf("second Open error = %v, want bbolt lock timeout", err)
 	}
-	if !strings.Contains(err.Error(), "one GitSync instance") {
+	if !strings.Contains(err.Error(), "one Git Clone Manager instance") {
 		t.Fatalf("lock error is unclear: %v", err)
 	}
 }

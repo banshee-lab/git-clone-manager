@@ -1,6 +1,6 @@
 # Docker Compose on openSUSE 16
 
-The local stack uses host networking so GitSync and the browser can both reach the mock OIDC provider at `http://localhost:5556`. This means ports `8080` and `5556` must be available on the host. The stack also uses named volumes for `/data` and `/repos`; Docker manages their ownership for the container's non-root UID 10001.
+The local stack uses host networking so Git Clone Manager and the browser can both reach the mock OIDC provider at `http://localhost:5556`. This means ports `8080` and `5556` must be available on the host. The stack also uses named volumes for `/data` and `/repos`; Docker manages their ownership for the container's non-root UID 10001.
 
 SELinux is enforcing by default. Check with `getenforce`. Named volumes work as-is. If you bind-mount a host directory, label it for container use with `:z` and give UID 10001 ownership, for example:
 

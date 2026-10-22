@@ -1,18 +1,20 @@
-# GitSync
+# Git Clone Manager
 
-GitSync is a self-hosted service that clones and synchronizes Git repositories on demand or from authenticated GitHub, GitLab, and generic webhooks. It includes an OIDC-protected dashboard, live activity logs, and optional failure notifications.
+Git Clone Manager is a self-hosted service that clones and synchronizes Git repositories on demand or from authenticated GitHub, GitLab, and generic webhooks. It includes an OIDC-protected dashboard, live activity logs, and optional failure notifications.
 
 ## Getting started
 
-Docker Compose builds the frontend and Go server, then starts GitSync with a local mock OIDC provider. On a fresh checkout:
+Docker Compose builds the frontend and Go server, then starts Git Clone Manager with a local mock OIDC provider. On a fresh checkout:
 
 ```sh
 docker compose up --build
 ```
 
-The local Compose services use host networking, so the browser and GitSync reach the mock provider at `http://localhost:5556` without a host-name mapping. Open `http://localhost:8080`; sign-in automatically returns the development identity `admin@example.com` (no password prompt). This mock provider is for local testing only. See [local Compose and openSUSE notes](docs/docker-compose-opensuse.md).
+The local Compose services use host networking, so the browser and Git Clone Manager reach the mock provider at `http://localhost:5556` without a host-name mapping. Open `http://localhost:8080`; sign-in automatically returns the development identity `admin@example.com` (no password prompt). This mock provider is for local testing only. See [local Compose and openSUSE notes](docs/docker-compose-opensuse.md).
 
 Production deployment must use HTTPS, a production OIDC client, unique secrets, persistent `/data` and `/repos` volumes, and a reverse proxy. See [deployment](docs/deployment.md), [OIDC setup](docs/oidc.md), and [configuration](docs/configuration.md).
+
+For a production Docker Compose example, including required environment variables, see the [installation guide](docs/install.md).
 
 ## Features
 
@@ -44,4 +46,4 @@ docker build --target web-test .
 
 ## License
 
-GitSync is licensed under [GPL-3.0-or-later](LICENSE).
+Git Clone Manager is licensed under [GPL-3.0-or-later](LICENSE).

@@ -1,6 +1,6 @@
 <script lang="ts">
   import "../detail.css";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import {
     AlertDialog,
     Button,
@@ -23,10 +23,10 @@
   import { events } from "#lib/events.svelte";
   import { createLogStream } from "#lib/log-stream.svelte";
   import { repositoryStatusTone } from "#lib/repositories.svelte";
-  import { formatDateTime, formatDuration, stripAnsi } from "#lib/utils";
+  import { formatDateTime, formatDuration, statusTone, stripAnsi } from "#lib/utils";
   import type { ActivitySummary, Repository } from "#lib/api/types";
 
-  const ACTIVITY_LIMIT = 20;
+  const ACTIVITY_LIMIT = 10;
 
   let repository = $state<Repository | null>(null);
   let activities = $state<ActivitySummary[]>([]);
@@ -40,10 +40,12 @@
   let selectedActivityId = $state<string | null>(null);
   let activityLog = $state("");
   let activityLoading = $state(false);
-  let autoScroll = $state(true);
+  let logRequestId = 0;
   let liveStream = $state<ReturnType<typeof createLogStream> | null>(null);
-  let logViewport = $state<HTMLDivElement | null>(null);
   let now = $state(Date.now());
+  let selectedActivity = $derived(
+    activities.find((activity) => activity.id === selectedActivityId) ?? null,
+  );
 
   onMount(() => {
     const timer = setInterval(() => {
@@ -73,15 +75,20 @@
   }
 
   async function loadActivityLog(activityId: string): Promise<void> {
+    const requestId = ++logRequestId;
     activityLoading = true;
     try {
       const log = await getActivityLog(activityId, false);
-      activityLog = stripAnsi(log);
+      if (requestId === logRequestId) activityLog = stripAnsi(log);
     } catch (error) {
-      activityLog =
-        error instanceof Error ? error.message : "Unable to load activity log.";
+      if (requestId === logRequestId) {
+        activityLog =
+          error instanceof Error
+            ? error.message
+            : "Unable to load activity log.";
+      }
     } finally {
-      activityLoading = false;
+      if (requestId === logRequestId) activityLoading = false;
     }
   }
 
@@ -99,6 +106,13 @@
   }
 
   async function openActivity(activityId: string | null): Promise<void> {
+    logRequestId++;
+    activityLoading = false;
+    if (liveStream) {
+      liveStream.close();
+      liveStream = null;
+    }
+
     if (!activityId) {
       selectedActivityId = null;
       updateActivityQuery(null);
@@ -122,17 +136,19 @@
         }
         picked = detail;
       } catch (error) {
+        if (selectedActivityId !== activityId) return;
         activityLog =
           error instanceof Error ? error.message : "Unable to load activity.";
         return;
       }
     }
+    if (selectedActivityId !== activityId) return;
 
     if (picked.status === "running" || picked.status === "queued") {
-      if (liveStream) liveStream.close();
       const stream = createLogStream(picked.id);
       liveStream = stream;
       stream.subscribe(() => {
+        if (selectedActivityId !== picked?.id || liveStream !== stream) return;
         activityLog = stripAnsi(stream.log || "");
         if (stream.activityStatus) {
           const act = activities.find((entry) => entry.id === picked?.id);
@@ -146,10 +162,6 @@
       return;
     }
 
-    if (liveStream) {
-      liveStream.close();
-      liveStream = null;
-    }
     await loadActivityLog(picked.id);
   }
 
@@ -159,7 +171,6 @@
     if (reset) {
       activityCursor = null;
     }
-    activityLoading = true;
     try {
       const list = await listActivities(id, {
         limit: ACTIVITY_LIMIT,
@@ -174,35 +185,22 @@
       if (list.length > 0) {
         activityCursor = list[list.length - 1].created_at;
       }
-
-      const currentQuery = page.url.searchParams.get("activity");
-      if (currentQuery) {
-        void openActivity(currentQuery);
-      }
     } catch (error) {
       loadError =
         error instanceof Error
           ? error.message
           : "Unable to load activity history.";
-    } finally {
-      activityLoading = false;
     }
   }
 
   async function loadRepository(): Promise<void> {
     const id = page.params.id;
     if (!id) return;
-    loading = true;
+    loading = repository?.id !== id;
     loadError = null;
     try {
       const repo = await getRepository(id);
       repository = repo;
-      if (!selectedActivityId) {
-        const fromQuery = page.url.searchParams.get("activity");
-        if (fromQuery) {
-          selectedActivityId = fromQuery;
-        }
-      }
       await loadActivities(true);
     } catch (error) {
       loadError =
@@ -228,26 +226,17 @@
   $effect(() => {
     const id = page.params.id;
     if (!id) return;
-    void loadRepository();
+    untrack(() => void loadRepository());
   });
 
   $effect(() => {
     const queryId = page.url.searchParams.get("activity");
-    if (queryId && queryId !== selectedActivityId) {
-      void openActivity(queryId);
-    } else if (!queryId && selectedActivityId) {
-      void openActivity(null);
+    const selectedId = untrack(() => selectedActivityId);
+    if (queryId && queryId !== selectedId) {
+      untrack(() => void openActivity(queryId));
+    } else if (!queryId && selectedId) {
+      untrack(() => void openActivity(null));
     }
-  });
-
-  $effect(() => {
-    if (!autoScroll || !logViewport) return;
-    void activityLog;
-    queueMicrotask(() => {
-      if (logViewport) {
-        logViewport.scrollTop = logViewport.scrollHeight;
-      }
-    });
   });
 
   async function handleSyncNow(): Promise<void> {
@@ -297,36 +286,20 @@
     document.body.removeChild(link);
   }
 
-  onMount(() => {
-    const cleanup = [
-      events.subscribe("activity.queued", handleActivityEvent),
-      events.subscribe("activity.started", handleActivityEvent),
-      events.subscribe("activity.finished", handleActivityEvent),
-      events.subscribe("repository.updated", () => void loadRepository()),
-    ];
-    return () => {
-      cleanup.forEach((fn) => fn());
-      if (liveStream) liveStream.close();
-    };
-  });
 </script>
 
 <svelte:head>
-  <title>{repository?.name ?? "Repository"} · GitSync</title>
+  <title>{repository?.name ?? "Repository"} · Git Clone Manager</title>
 </svelte:head>
 
 <section class="repository-detail-page page-shell">
-  {#if loading}
+  {#if loading && repository?.id !== page.params.id}
     <p class="empty-state">Loading repository details…</p>
   {:else if loadError}
     <p class="empty-state error">{loadError}</p>
   {:else if repository}
     <header class="repo-header">
       <div>
-        <div class="status-row">
-          <StatusDot tone={repositoryStatusTone(repository)} />
-          <span>{repository.last_activity?.status ?? "never"}</span>
-        </div>
         <Heading level={1} size="lg">{repository.name}</Heading>
       </div>
       <div class="header-actions">
@@ -391,6 +364,20 @@
             <dt>Updated</dt>
             <dd>{formatDateTime(repository.updated_at)}</dd>
           </div>
+          <div>
+            <dt>Last Sync</dt>
+            <dd class="status-row">
+              <StatusDot
+                tone={repository.last_activity
+                  ? repositoryStatusTone({
+                      last_activity: repository.last_activity,
+                      running_activity_id: null,
+                    })
+                  : "muted"}
+              />
+              <span>{repository.last_activity?.status ?? "never"}</span>
+            </dd>
+          </div>
         </dl>
       </div>
       <div class="info-panel">
@@ -454,10 +441,14 @@
                 <button
                   type="button"
                   class:selected={selectedActivityId === activity.id}
+                  aria-pressed={selectedActivityId === activity.id}
                   onclick={() => void openActivity(activity.id)}
                 >
                   <div class="activity-row">
-                    <span class="activity-summary">{activity.summary}</span>
+                    <span class="activity-title">
+                      <StatusDot tone={statusTone(activity.status)} />
+                      <span class="activity-summary">{activity.summary}</span>
+                    </span>
                     <small class="activity-meta">
                       {activity.status} · Trigger: {activity.trigger} · Source: {activity.source}{activity.triggered_by
                         ? ` (${activity.triggered_by})`
@@ -486,7 +477,18 @@
 
       <div class="log-panel">
         <div class="panel-header">
-          <h2>Output</h2>
+          <div class="output-heading">
+            <h2>Output</h2>
+            {#if selectedActivity}
+              <div class="output-activity" aria-live="polite">
+                <StatusDot tone={statusTone(selectedActivity.status)} />
+                <span class="output-activity__summary">{selectedActivity.summary}</span>
+                <span class="output-activity__status">{selectedActivity.status}</span>
+              </div>
+            {:else}
+              <p class="output-unselected">Select an activity to view its output</p>
+            {/if}
+          </div>
           {#if selectedActivityId}
             <div class="inline-actions">
               <Button type="button" variant="secondary" onclick={handleCopyLog}
@@ -497,17 +499,10 @@
                 variant="secondary"
                 onclick={handleDownloadLog}>Download</Button
               >
-              <Button
-                type="button"
-                variant="secondary"
-                onclick={() => (autoScroll = !autoScroll)}
-              >
-                {autoScroll ? "Auto-scroll on" : "Auto-scroll off"}
-              </Button>
             </div>
           {/if}
         </div>
-        <div class="log-shell" bind:this={logViewport}>
+        <div class="log-shell">
           {#if activityLoading}
             <p>Loading output…</p>
           {:else}

@@ -1,12 +1,12 @@
 # Deployment
 
-GitSync is distributed as a Docker image. Build it with `docker compose up --build` or `docker build -t gitsync .`; frontend assets are built in the image build and embedded in the Go binary. Runtime data is separate from the image.
+Git Clone Manager is distributed as a Docker image. Build it with `docker compose up --build` or `docker build -t gitsync .`; frontend assets are built in the image build and embedded in the Go binary. Runtime data is separate from the image.
 
 ## Volumes and identity
 
 Persist `/data` (bbolt database and, by default, logs) and `/repos` (clones). The container runs as UID/GID `10001`; bind-mounted directories must be writable by that identity. Named volumes are simplest. If logs need a separate volume, set `GITSYNC_STORAGE_LOGS_DIR` to its mount path. Back up data with the service stopped or use a filesystem snapshot that captures database and logs consistently.
 
-Only one GitSync process may use a given bbolt database. Do not scale the service to multiple replicas against the same `/data` volume.
+Only one Git Clone Manager process may use a given bbolt database. Do not scale the service to multiple replicas against the same `/data` volume.
 
 ## Reverse proxy and HTTPS
 

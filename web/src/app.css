@@ -21,7 +21,7 @@ textarea {
   font: inherit;
 }
 
-/* Keep GitSync's working surfaces close to the compact RunWisp Manager shell. */
+/* Keep Git Clone Manager's working surfaces close to the compact RunWisp Manager shell. */
 .main-content {
   min-width: 0;
   padding: 2rem;

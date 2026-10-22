@@ -13,7 +13,7 @@ describe("application layout", () => {
     render(LayoutHost);
 
     expect(
-      screen.getByRole("link", { name: "GitSync home" }),
+      screen.getByRole("link", { name: "Git Clone Manager home" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("complementary", { name: "Repository navigation" }),

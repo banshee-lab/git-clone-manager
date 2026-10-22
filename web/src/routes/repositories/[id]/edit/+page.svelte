@@ -156,7 +156,7 @@
 </script>
 
 <svelte:head>
-  <title>Edit repository · GitSync</title>
+  <title>Edit repository · Git Clone Manager</title>
 </svelte:head>
 
 <section class="repository-edit-page page-shell">

@@ -19,7 +19,7 @@ export const load: LayoutLoad = async ({ fetch, url }) => {
       bootstrapError:
         error instanceof ApiError
           ? error.message
-          : "The GitSync server could not be reached.",
+          : "The Git Clone Manager server could not be reached.",
     };
   }
 };

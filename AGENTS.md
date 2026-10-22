@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-GitSync is a Go service with a SvelteKit frontend. The server entry point is `cmd/gitsync`; backend packages live under `internal/` (API, authentication, configuration, Git execution, persistence, sync orchestration, and webhooks). Backend tests sit beside their packages as `*_test.go`. The frontend is in `web/src`: routes are under `web/src/routes`, shared API and state code under `web/src/lib`, and tests are colocated. Operational and feature documentation is in `docs/`; Docker assets are at the repository root and in `deploy/`.
+Git Clone Manager is a Go service with a SvelteKit frontend. The server entry point is `cmd/gitsync`; backend packages live under `internal/` (API, authentication, configuration, Git execution, persistence, sync orchestration, and webhooks). Backend tests sit beside their packages as `*_test.go`. The frontend is in `web/src`: routes are under `web/src/routes`, shared API and state code under `web/src/lib`, and tests are colocated. Operational and feature documentation is in `docs/`; Docker assets are at the repository root and in `deploy/`.
 
 ## Build, Test, and Development Commands
 

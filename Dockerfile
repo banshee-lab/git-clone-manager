@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM go-deps AS go-test
 RUN apk add --no-cache git build-base \
-    && git config --global user.name "GitSync Test" \
+    && git config --global user.name "Git Clone Manager Test" \
     && git config --global user.email "gitsync-test@example.invalid" \
     && git config --global push.autoSetupRemote true
 COPY . .

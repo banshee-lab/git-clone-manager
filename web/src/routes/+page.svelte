@@ -188,7 +188,7 @@
 </script>
 
 <svelte:head>
-  <title>Dashboard · GitSync</title>
+  <title>Dashboard · Git Clone Manager</title>
 </svelte:head>
 
 <section class="dashboard-shell" bind:this={dashboardShell} tabindex="-1">

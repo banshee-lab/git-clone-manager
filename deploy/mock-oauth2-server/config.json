@@ -12,7 +12,7 @@
             "sub": "gitsync-local-admin",
             "email": "admin@example.com",
             "email_verified": true,
-            "name": "GitSync Local Admin",
+            "name": "Git Clone Manager Local Admin",
             "preferred_username": "admin"
           }
         }
