@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"gitsync/internal/logstore"
 	"gitsync/internal/model"
 	"gitsync/internal/store"
+	"gitsync/internal/store/bolt"
 )
 
 func TestValidateRepositoryInputRules(t *testing.T) {
@@ -134,6 +136,62 @@ func TestRepositoryOutputOmitsAccessToken(t *testing.T) {
 	}
 	if strings.Contains(string(body), canary) || strings.Contains(string(body), `"access_token"`) {
 		t.Fatalf("repository response exposed access token: %s", body)
+	}
+}
+
+func TestRepositoryHandlersRedactCredentialsFromLegacyRecords(t *testing.T) {
+	const (
+		repositoryID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+		canaryUser   = "canary-legacy-user"
+		canaryPass   = "canary-legacy-password"
+	)
+	db, err := bolt.Open(filepath.Join(t.TempDir(), "gitsync.db"))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+	repo := model.Repository{
+		ID: repositoryID, Name: "legacy", URL: "https://" + canaryUser + ":" + canaryPass + "@example.com/repo.git",
+		Path: filepath.Join(t.TempDir(), "clone"), AccessUsername: "git",
+	}
+	if err := db.Repositories().Create(context.Background(), &repo); err != nil {
+		t.Fatalf("persist legacy repository: %v", err)
+	}
+
+	cfg := config.Default()
+	cfg.Server.BaseURL = "https://gitsync.example.com"
+	service := New(cfg, db.Repositories(), db.Activities(), nil, nil, nil, nil)
+	user := auth.User{Sub: "user-1", Email: "admin@example.test", Name: "Admin User", Role: "admin"}
+	checks := []struct {
+		name    string
+		path    string
+		setID   bool
+		handler func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "list", path: "/api/repositories", handler: service.ListRepositories},
+		{name: "detail", path: "/api/repositories/" + repositoryID, setID: true, handler: service.GetRepository},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", check.path, nil)
+			if check.setID {
+				req.SetPathValue("id", repositoryID)
+			}
+			req = req.WithContext(auth.ContextWithUser(req.Context(), user))
+			rec := httptest.NewRecorder()
+			check.handler(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			for _, secret := range []string{canaryUser, canaryPass} {
+				if strings.Contains(rec.Body.String(), secret) {
+					t.Fatalf("response leaked legacy URL credential %q: %s", secret, rec.Body.String())
+				}
+			}
+			if !strings.Contains(rec.Body.String(), "https://example.com/repo.git") {
+				t.Fatalf("response did not preserve credential-free repository URL: %s", rec.Body.String())
+			}
+		})
 	}
 }
 

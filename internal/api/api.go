@@ -208,23 +208,7 @@ func (s *Service) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]Repository, 0, len(repos))
 	for _, repo := range repos {
-		v := Repository{
-			ID:                        repo.ID,
-			Name:                      repo.Name,
-			URL:                       repo.URL,
-			Branch:                    repo.Branch,
-			ResolvedBranch:            repo.ResolvedBranch,
-			Path:                      repo.Path,
-			AccessUsername:            repo.AccessUsername,
-			PostCommand:               repo.PostCommand,
-			PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds,
-			HardReset:                 repo.HardReset,
-			HasAccessToken:            repo.AccessToken != "",
-			WebhookSecret:             repo.WebhookSecret,
-			WebhookURL:                strings.TrimRight(s.cfg.Server.BaseURL, "/") + "/hooks/" + repo.ID,
-			CreatedAt:                 repo.CreatedAt,
-			UpdatedAt:                 repo.UpdatedAt,
-		}
+		v := repositoryOut(repo, s.cfg.Server.BaseURL)
 		if act, ok := latestByRepo[repo.ID]; ok {
 			copy := act
 			v.LastActivity = &copy
@@ -253,7 +237,7 @@ func (s *Service) GetRepository(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusInternalServerError, "internal", "failed to load repository")
 		return
 	}
-	view := Repository{ID: repo.ID, Name: repo.Name, URL: repo.URL, Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookSecret: repo.WebhookSecret, WebhookURL: strings.TrimRight(s.cfg.Server.BaseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
+	view := repositoryOut(*repo, s.cfg.Server.BaseURL)
 	list, err := s.activities.ListByRepository(ctx, repo.ID, 20, nil)
 	if err == nil {
 		for _, act := range list {
@@ -1021,7 +1005,16 @@ func ensureGitDir(path string) error {
 }
 
 func repositoryOut(repo model.Repository, baseURL string) Repository {
-	return Repository{ID: repo.ID, Name: repo.Name, URL: repo.URL, Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookSecret: repo.WebhookSecret, WebhookURL: strings.TrimRight(baseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
+	return Repository{ID: repo.ID, Name: repo.Name, URL: safeRepositoryURL(repo.URL), Branch: repo.Branch, ResolvedBranch: repo.ResolvedBranch, Path: repo.Path, AccessUsername: repo.AccessUsername, PostCommand: repo.PostCommand, PostCommandTimeoutSeconds: repo.PostCommandTimeoutSeconds, HardReset: repo.HardReset, HasAccessToken: repo.AccessToken != "", WebhookSecret: repo.WebhookSecret, WebhookURL: strings.TrimRight(baseURL, "/") + "/hooks/" + repo.ID, CreatedAt: repo.CreatedAt, UpdatedAt: repo.UpdatedAt}
+}
+
+func safeRepositoryURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed == nil {
+		return "[invalid repository URL]"
+	}
+	parsed.User = nil
+	return parsed.String()
 }
 
 func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, kind string, data any) error {
