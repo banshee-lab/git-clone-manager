@@ -1,8 +1,8 @@
 # Security review
 
-This checklist records the Phase 14 review against the implementation and its regression tests. The review found one input-boundary issue: repository URLs accepted embedded HTTP credentials even though the repository URL is returned by the authenticated API. Validation now rejects URL user-info so credentials must use the access-token field (`internal/api/api.go`; `TestValidateRepositoryInputRules`).
+This checklist records the Phase 14 review against the implementation and its regression tests. The review found two related exposures: new repository input accepted embedded HTTP credentials, and legacy bbolt records bypassed that validation while API serializers returned their URL user-info. New input now rejects credentialed URLs, and all repository API serializers strip user-info from stored URLs (`internal/api/api.go`; `TestValidateRepositoryInputRules`, `TestRepositoryHandlersRedactCredentialsFromLegacyRecords`).
 
-**Developer review:** complete. **Independent reviewer sign-off:** pending.
+**Developer review:** complete. **Independent reviewer sign-off:** PASS on `157336f`; reviewer verified the bbolt-backed list/detail regression test under `go test -race ./internal/api`.
 
 ## Checklist
 
