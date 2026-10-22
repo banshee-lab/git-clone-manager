@@ -3,6 +3,10 @@
 web/build
 web/.svelte-kit
 internal/webui/dist/*
-/gitsync
+bin
 *.test
 *.out
+docs
+deploy
+docker-compose.yml
+.env
