@@ -67,7 +67,7 @@ func NewManager(repos store.Repositories, activities store.Activities, logs logs
 		hub = events.NewHub()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	m := &Manager{repos: repos, activities: activities, logs: logs, executor: executor, cleaner: cleaner, notifier: notifier, hub: hub, logger: slog.Default(), ctx: ctx, cancel: cancel, jobs: make(chan model.Activity, 65536), accepting: true, busy: make(map[string]bool), live: make(map[string]*LiveLog)}
+	m := &Manager{repos: repos, activities: activities, logs: logs, executor: executor, cleaner: cleaner, notifier: notifier, hub: hub, logger: slog.Default().With("component", "syncer"), ctx: ctx, cancel: cancel, jobs: make(chan model.Activity, 65536), accepting: true, busy: make(map[string]bool), live: make(map[string]*LiveLog)}
 	for range maxConcurrent {
 		m.workers.Add(1)
 		go m.worker()
@@ -225,7 +225,7 @@ func (m *Manager) runActivity(a model.Activity) {
 		if result.ResolvedBranch != "" {
 			repo.ResolvedBranch = result.ResolvedBranch
 			if err := m.repos.Update(context.Background(), repo); err != nil {
-				m.logger.Warn("could not update resolved branch", "repository_id", repo.ID, "error", err)
+				m.logger.Warn("could not update resolved branch", "repo_id", repo.ID, "error", err)
 			}
 		}
 		m.finishFailure(ctx, a, stage, summary, live)
@@ -250,7 +250,7 @@ func (m *Manager) runActivity(a model.Activity) {
 	if a.Status == model.ActivitySuccess && result.ResolvedBranch != "" {
 		repo.ResolvedBranch = result.ResolvedBranch
 		if err := m.repos.Update(context.Background(), repo); err != nil {
-			m.logger.Warn("could not update resolved branch", "repository_id", repo.ID, "error", err)
+			m.logger.Warn("could not update resolved branch", "repo_id", repo.ID, "error", err)
 		}
 	}
 	m.afterFinish(a, repo)
@@ -320,7 +320,7 @@ func (m *Manager) failInternal(a model.Activity, summary string) {
 func (m *Manager) afterFinish(a model.Activity, repo *model.Repository) {
 	if m.cleaner != nil {
 		if _, err := m.cleaner.PruneRepository(context.Background(), a.RepositoryID); err != nil {
-			m.logger.Warn("activity cleanup failed", "repository_id", a.RepositoryID, "error", err)
+			m.logger.Warn("activity cleanup failed", "repo_id", a.RepositoryID, "error", err)
 		}
 	}
 	m.publish("activity.finished", a)

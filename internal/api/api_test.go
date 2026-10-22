@@ -36,6 +36,12 @@ func TestValidateRepositoryInputRules(t *testing.T) {
 		t.Fatalf("valid input rejected: %v", err)
 	}
 
+	credentialURL := base
+	credentialURL.URL = "https://canary-user:canary-token@example.com/repo.git"
+	if err := validateRepositoryInput(cfg, repos, ctx, credentialURL, true, ""); err == nil || !strings.Contains(err.Error(), "embedded credentials") {
+		t.Fatalf("expected embedded URL credentials to be rejected, got %v", err)
+	}
+
 	badBranch := base
 	badBranch.Branch = "bad branch"
 	if err := validateRepositoryInput(cfg, repos, ctx, badBranch, true, ""); err == nil || !strings.Contains(err.Error(), "branch") {
@@ -46,6 +52,17 @@ func TestValidateRepositoryInputRules(t *testing.T) {
 	badPath.Path = cfg.Storage.DataDir
 	if err := validateRepositoryInput(cfg, repos, ctx, badPath, true, ""); err == nil || !strings.Contains(err.Error(), "data_dir") {
 		t.Fatalf("expected data_dir validation error, got %v", err)
+	}
+
+	symlinkRoot := t.TempDir()
+	symlinkPath := filepath.Join(symlinkRoot, "alias")
+	if err := os.Symlink(t.TempDir(), symlinkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+	symlinked := base
+	symlinked.Path = filepath.Join(symlinkPath, "repo")
+	if err := validateRepositoryInput(cfg, repos, ctx, symlinked, true, ""); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlinked path to be rejected, got %v", err)
 	}
 
 	dupName := base
@@ -105,6 +122,18 @@ func TestRepositoryOutputIncludesWebhookSecret(t *testing.T) {
 	out := repositoryOut(repo, "https://example.com")
 	if out.WebhookSecret != "super-secret" {
 		t.Fatalf("secret omitted from repository payload: got %q want %q", out.WebhookSecret, "super-secret")
+	}
+}
+
+func TestRepositoryOutputOmitsAccessToken(t *testing.T) {
+	const canary = "canary-access-token-do-not-return"
+	repo := model.Repository{ID: "11111111-1111-4111-8111-111111111111", Name: "alpha", AccessToken: canary}
+	body, err := json.Marshal(repositoryOut(repo, "https://example.com"))
+	if err != nil {
+		t.Fatalf("marshal repository: %v", err)
+	}
+	if strings.Contains(string(body), canary) || strings.Contains(string(body), `"access_token"`) {
+		t.Fatalf("repository response exposed access token: %s", body)
 	}
 }
 
@@ -187,6 +216,13 @@ func TestValidateDeletePathSafety(t *testing.T) {
 	}
 	if err := validateDeletePath(dataDir, filepath.Join(baseDir, "safe")); err == nil {
 		t.Fatal("expected path without .git to fail")
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(baseDir, alias); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+	if err := validateDeletePath(dataDir, filepath.Join(alias, "repo")); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlinked delete path to fail, got %v", err)
 	}
 }
 

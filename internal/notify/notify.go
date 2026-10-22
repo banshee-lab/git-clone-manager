@@ -59,6 +59,7 @@ func New(cfg config.Config, logs logTailStore, logger *slog.Logger, version stri
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With("component", "notifications")
 	m := &Multi{
 		logs:    logs,
 		baseURL: cfg.Server.BaseURL,

@@ -296,30 +296,52 @@ func decodeRepositoryInputBody(r io.Reader) (RepositoryInput, map[string]bool, e
 		present[key] = true
 		switch key {
 		case "name":
-			if err := json.Unmarshal(value, &input.Name); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.Name); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "url":
-			if err := json.Unmarshal(value, &input.URL); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.URL); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "branch":
-			if err := json.Unmarshal(value, &input.Branch); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.Branch); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "path":
-			if err := json.Unmarshal(value, &input.Path); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.Path); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "access_username":
-			if err := json.Unmarshal(value, &input.AccessUsername); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.AccessUsername); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "access_token":
 			var token *string
-			if err := json.Unmarshal(value, &token); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &token); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 			input.AccessToken = token
 		case "clear_access_token":
-			if err := json.Unmarshal(value, &input.ClearAccessToken); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.ClearAccessToken); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "post_command":
-			if err := json.Unmarshal(value, &input.PostCommand); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.PostCommand); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "post_command_timeout_seconds":
-			if err := json.Unmarshal(value, &input.PostCommandTimeoutSeconds); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.PostCommandTimeoutSeconds); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "hard_reset":
-			if err := json.Unmarshal(value, &input.HardReset); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &input.HardReset); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 		case "webhook_secret":
 			var secret *string
-			if err := json.Unmarshal(value, &secret); err != nil { return RepositoryInput{}, nil, err }
+			if err := json.Unmarshal(value, &secret); err != nil {
+				return RepositoryInput{}, nil, err
+			}
 			input.WebhookSecret = secret
 		}
 	}
@@ -769,7 +791,8 @@ func (s *Service) writeActivityStream(w respondingWriter, act *model.Activity, o
 				_ = writeSSEEventID(w, w.Flusher, "end", strconv.FormatInt(offset, 10), map[string]string{"status": string(act.Status)})
 				return
 			}
-			chunk := content[offset:]; finalOffset := int64(len(content))
+			chunk := content[offset:]
+			finalOffset := int64(len(content))
 			_ = writeSSEEventID(w, w.Flusher, "log", strconv.FormatInt(finalOffset, 10), map[string]any{"chunk": trimUTF8Boundaries(chunk), "offset": finalOffset})
 			_ = writeSSEEventID(w, w.Flusher, "end", strconv.FormatInt(int64(len(content)), 10), map[string]string{"status": string(act.Status)})
 			return
@@ -837,8 +860,8 @@ func validateRepositoryInput(cfg config.Config, repos store.Repositories, ctx co
 		return badRequest("url is required")
 	}
 	parsed, err := url.Parse(input.URL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return badRequest("url must be a valid http or https URL")
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		return badRequest("url must be a valid http or https URL without embedded credentials")
 	}
 	if input.Branch != "" {
 		if strings.ContainsAny(input.Branch, " \t\r\n") || strings.Contains(input.Branch, "..") || strings.HasPrefix(input.Branch, "-") {
@@ -854,6 +877,13 @@ func validateRepositoryInput(cfg config.Config, repos store.Repositories, ctx co
 	}
 	if !filepath.IsAbs(clean) || clean == "/" {
 		return badRequest("path must be an absolute clone path")
+	}
+	containsSymlink, err := pathContainsSymlink(clean)
+	if err != nil {
+		return badRequest("path could not be checked for symlinks")
+	}
+	if containsSymlink {
+		return badRequest("path cannot traverse a symlink")
 	}
 	if isInsideDir(clean, cfg.Storage.DataDir) {
 		return badRequest("path cannot be inside the storage data_dir")
@@ -932,8 +962,15 @@ func sanitizeFilename(name string) string {
 }
 
 func validateDeletePath(dataDir, path string) error {
-	if !filepath.IsAbs(path) || path == "/" {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
 		return errors.New("path must be an absolute clone path")
+	}
+	containsSymlink, err := pathContainsSymlink(path)
+	if err != nil {
+		return fmt.Errorf("check repository path for symlinks: %w", err)
+	}
+	if containsSymlink {
+		return errors.New("path cannot traverse a symlink")
 	}
 	if isInsideDir(filepath.Clean(path), filepath.Clean(dataDir)) {
 		return errors.New("path cannot be inside the data_dir")
@@ -945,6 +982,30 @@ func validateDeletePath(dataDir, path string) error {
 		return fmt.Errorf("check repository path: %w", err)
 	}
 	return nil
+}
+
+func pathContainsSymlink(path string) (bool, error) {
+	clean := filepath.Clean(path)
+	volume := filepath.VolumeName(clean)
+	current := volume + string(filepath.Separator)
+	remainder := strings.TrimPrefix(clean, current)
+	for _, part := range strings.Split(remainder, string(filepath.Separator)) {
+		if part == "" {
+			continue
+		}
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func ensureGitDir(path string) error {

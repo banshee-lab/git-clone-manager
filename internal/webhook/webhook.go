@@ -41,7 +41,7 @@ func NewHandler(globalSecret string, repositories repositoryStore, manager manag
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Handler{globalSecret: globalSecret, repositories: repositories, manager: manager, logger: logger}
+	return &Handler{globalSecret: globalSecret, repositories: repositories, manager: manager, logger: logger.With("component", "webhook")}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +49,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	source := "unknown"
 	outcome := "internal_error"
 	defer func() {
-		h.logger.Info("webhook request", "repository_id", repositoryID, "source", source, "outcome", outcome)
+		h.logger.Info("webhook request", "repo_id", repositoryID, "source", source, "outcome", outcome)
 	}()
 
 	repo, err := h.repositories.Get(r.Context(), repositoryID)

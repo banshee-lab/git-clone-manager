@@ -32,7 +32,7 @@ var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("server stopped", "error", err)
+		slog.Error("server stopped", "component", "server", "error", err)
 		os.Exit(1)
 	}
 }
@@ -69,8 +69,9 @@ func run() error {
 	}
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
-	logger.Info("loaded configuration", "config", cfg.Redacted())
+	logger.Info("loaded configuration", "component", "server", "config", cfg.Redacted())
 	logger.Info("notification channels configured",
+		"component", "server",
 		"telegram_enabled", cfg.Notifications.Telegram.Enabled,
 		"webhook_enabled", cfg.Notifications.Webhook.Enabled,
 	)
@@ -106,7 +107,7 @@ func run() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Server.ShutdownTimeout))
 		defer cancel()
 		if err := manager.Shutdown(ctx); err != nil {
-			logger.Error("sync manager shutdown failed", "error", err)
+			logger.Error("sync manager shutdown failed", "component", "server", "error", err)
 		}
 	}()
 	if err := manager.Recover(context.Background()); err != nil {
@@ -129,7 +130,7 @@ func run() error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("starting HTTP server", "address", server.Addr, "version", version)
+		logger.Info("starting HTTP server", "component", "server", "address", server.Addr, "version", version)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 			return

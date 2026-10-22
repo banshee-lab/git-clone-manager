@@ -20,7 +20,7 @@ type Cleaner struct {
 }
 
 func New(activities store.Activities, repositories store.Repositories, logs logstore.Store, maxItems int) *Cleaner {
-	return &Cleaner{activities: activities, repositories: repositories, logs: logs, maxItems: maxItems, logger: slog.Default()}
+	return &Cleaner{activities: activities, repositories: repositories, logs: logs, maxItems: maxItems, logger: slog.Default().With("component", "history")}
 }
 
 func (c *Cleaner) PruneRepository(ctx context.Context, repoID string) (int, error) {
@@ -37,7 +37,7 @@ func (c *Cleaner) PruneRepository(ctx context.Context, repoID string) (int, erro
 			return 0, err
 		}
 		if err := c.logs.Remove(repoID, activity.ID); err != nil {
-			c.logger.Warn("could not remove old activity log; keeping record for retry", "repository_id", repoID, "activity_id", activity.ID, "error", err)
+			c.logger.Warn("could not remove old activity log; keeping record for retry", "repo_id", repoID, "activity_id", activity.ID, "error", err)
 			continue
 		}
 		ids = append(ids, activity.ID)

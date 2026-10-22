@@ -325,7 +325,8 @@ func TestHandlerLogsOutcomeWithoutPayload(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	logOutput := logs.String()
-	if !strings.Contains(logOutput, `repository_id=`+testRepositoryID) ||
+	if !strings.Contains(logOutput, `repo_id=`+testRepositoryID) ||
+		!strings.Contains(logOutput, `component=webhook`) ||
 		!strings.Contains(logOutput, "source=other") ||
 		!strings.Contains(logOutput, "outcome=accepted") ||
 		strings.Contains(logOutput, "payload-data") {
