@@ -1,0 +1,27 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build_and_publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build, Push and Notify
+        uses: banshee-lab/docker-deploy-action@main
+        with:
+          username: dahool
+          password: ${{ secrets.GH_TOKEN }}
+          komodo_address: ${{ vars.KOMODO_URL }}
+          komodo_api_key: ${{ secrets.KOMODO_API_KEY }}
+          komodo_api_secret: ${{ secrets.KOMODO_API_SECRET }}
+          stack_name: ${{ vars.STACK_NAME }}
+          telegram_token: ${{ secrets.TELEGRAM_TOKEN }}
+          telegram_to: ${{ secrets.TELEGRAM_TO }}
+          commit_message: gitclone
