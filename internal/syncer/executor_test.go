@@ -172,7 +172,7 @@ func commit(t *testing.T, dir, message string) {
 	}
 	run(t, dir, "git", "add", "README")
 	run(t, dir, "git", "commit", "-m", message)
-	run(t, dir, "git", "push")
+	run(t, dir, "git", "push", "-u", "origin", "HEAD")
 }
 
 func run(t *testing.T, dir string, args ...string) {
