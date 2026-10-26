@@ -15,7 +15,7 @@
     "test:ci": "vitest run"
   },
   "dependencies": {
-    "@runwisp/ui": "^1.7.0"
+    "@runwisp/ui": "^1.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
